@@ -21,6 +21,13 @@
       "repo": "EkilyHQ/Press-Theme-Solstice",
       "manifestUrl": "https://raw.githubusercontent.com/EkilyHQ/Press-Theme-Solstice/main/theme-release.json",
       "description": "Official high-contrast magazine theme."
+    },
+    {
+      "value": "glasswing",
+      "label": "Glasswing",
+      "repo": "EkilyHQ/Press-Theme-Glasswing",
+      "manifestUrl": "https://raw.githubusercontent.com/EkilyHQ/Press-Theme-Glasswing/main/theme-release.json",
+      "description": "Official homepage theme with a hero story, secondary headlines, and dense article lists."
     }
   ]
 }
