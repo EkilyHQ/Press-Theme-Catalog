@@ -1,0 +1,29 @@
+name: Verify Catalog
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * *'
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run verifier tests
+        run: node scripts/test-verify-catalog.mjs
+
+      - name: Verify official catalog and theme artifacts
+        run: node scripts/verify-catalog.mjs --catalog catalog.json --remote --verify-assets
