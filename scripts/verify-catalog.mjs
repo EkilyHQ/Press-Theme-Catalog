@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 
 const DEFAULT_PRESS_RELEASE_URL = 'https://raw.githubusercontent.com/EkilyHQ/Press/release-artifacts/system-release.json';
 const DEFAULT_OWNER = 'EkilyHQ';
+const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set([1, 2]);
 
 export async function verifyCatalog(options = {}) {
   const catalogPath = options.catalogPath || path.resolve('catalog.json');
@@ -172,7 +173,9 @@ function validateThemeRelease(entry, release, context) {
   if (release.value !== slug) context.failures.push(`${slug}: release value must match catalog`);
   if (release.label !== label) context.failures.push(`${slug}: release label must match catalog`);
   if (!isSemver(release.version)) context.failures.push(`${slug}: release version must be semver`);
-  if (release.contractVersion !== 1) context.failures.push(`${slug}: release contractVersion must be 1`);
+  if (!SUPPORTED_THEME_CONTRACT_VERSIONS.has(release.contractVersion)) {
+    context.failures.push(`${slug}: release contractVersion must be supported`);
+  }
   const pressRange = stringValue(release.engines && release.engines.press);
   if (!pressRange) {
     context.failures.push(`${slug}: release engines.press is required`);
