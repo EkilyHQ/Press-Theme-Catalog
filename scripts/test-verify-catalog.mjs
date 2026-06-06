@@ -25,6 +25,38 @@ test('verifyCatalog accepts a matching local official theme and ZIP asset', asyn
   });
 });
 
+test('verifyCatalog accepts supported v2 theme releases', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({
+      version: '3.4.3',
+      contractVersion: 2,
+      pressRange: '>=3.4.121 <4.0.0'
+    });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
+    const bytes = await readFile(zipPath);
+    release.version = '3.4.3';
+    release.contractVersion = 2;
+    release.engines.press = '>=3.4.121 <4.0.0';
+    release.asset.name = 'press-theme-arcus-v3.4.3.zip';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.121'
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.failures, []);
+  });
+});
+
 test('verifyCatalog rejects duplicate catalog identities and wrong repository URLs', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, catalog }) => {
     catalog.themes.push({
@@ -197,7 +229,8 @@ async function withFixture(callback) {
       version: '3.4.59',
       tag: 'v3.4.59'
     });
-    await writeJson(path.join(themeRepo, 'theme', 'theme.json'), createThemeManifest());
+    const themePath = path.join(themeRepo, 'theme', 'theme.json');
+    await writeJson(themePath, createThemeManifest());
     await writeFile(path.join(themeRepo, 'theme', 'theme.css'), ':root{}\n');
     await writeFile(path.join(themeRepo, 'theme', 'modules', 'layout.js'), 'export function mount() {}\n');
 
@@ -247,6 +280,7 @@ async function withFixture(callback) {
       catalogPath,
       workspaceRoot,
       releasePath,
+      themePath,
       release,
       catalog,
       tempDir
@@ -280,13 +314,16 @@ async function createThemeZip(tempDir, slug, options = {}) {
   return zipPath;
 }
 
-function createThemeManifest() {
+function createThemeManifest(options = {}) {
+  const version = options.version || '3.4.2';
+  const contractVersion = Number.isFinite(Number(options.contractVersion)) ? Number(options.contractVersion) : 1;
+  const pressRange = options.pressRange || '>=3.4.0 <4.0.0';
   return {
     name: 'Arcus',
-    version: '3.4.2',
-    contractVersion: 1,
+    version,
+    contractVersion,
     engines: {
-      press: '>=3.4.0 <4.0.0'
+      press: pressRange
     },
     styles: ['theme.css'],
     modules: ['modules/layout.js']
