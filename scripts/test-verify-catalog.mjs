@@ -78,7 +78,58 @@ test('verifyCatalog rejects v3 theme releases that allow pre-transition Press ve
     });
 
     assert.equal(result.ok, false);
-    assert.match(result.failures.join('\n'), /contract v3 engines\.press must start at Press 3\.4\.127/u);
+    assert.match(result.failures.join('\n'), /contract v3 engines\.press must not accept Press versions before 3\.4\.127/u);
+  });
+});
+
+test('verifyCatalog accepts v3 theme releases that require a later Press patch', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({ pressRange: '>=3.4.128 <4.0.0' });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
+    const bytes = await readFile(zipPath);
+    release.engines.press = '>=3.4.128 <4.0.0';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.128'
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.failures, []);
+  });
+});
+
+test('verifyCatalog rejects v3 range clauses that allow pre-transition Press versions', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const pressRange = '>=3.4.0 <3.4.1 || >=3.4.127 <4.0.0';
+    const theme = createThemeManifest({ pressRange });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
+    const bytes = await readFile(zipPath);
+    release.engines.press = pressRange;
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.127'
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /contract v3 engines\.press must not accept Press versions before 3\.4\.127/u);
   });
 });
 
