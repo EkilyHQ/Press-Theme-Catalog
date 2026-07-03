@@ -299,6 +299,11 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
   );
   await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export function route({ endpoint }, post) { const url = new URL(endpoint); url.searchParams.set("id", post.id); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
     'import { endpoint } from "./internal.js"; export function route(post) { const url = new URL(endpoint, window.location.href); url.searchParams.set("id", post.id); return url.href; }',
     'modules/interactions.js',
     {
@@ -373,6 +378,7 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
           '  derivedExternalUrl.searchParams.set("id", "sku-123");',
           '  const templateExternalUrl = new URL(`${externalBase}/variant`, window.location.href);',
           '  templateExternalUrl.searchParams.set("id", "sku-123");',
+          '  function helper() { const endpoint = "local"; return endpoint; }',
           '  return { productUrl, objectUrl: "https://example.test/product?" + productParams, inlineObjectUrl: "https://example.test/product?" + new URLSearchParams({ id: "sku-123" }), inlineTemplateUrl: `https://example.test/product?${new URLSearchParams({ id: "sku-123" })}`, aliasInlineTemplateUrl: `${externalBase}?${new URLSearchParams({ id: "sku-123" })}`, stringUrl: "https://example.test/product?" + stringParams, aliasStringUrl: externalBase + "?" + stringParams, grid: "https://example.test/layout?" + layoutParams, splitInlineExternal, splitLiteralExternal, splitUrl: externalBase + "?" + "id=" + "sku-123", splitKeyUrl: externalBase + "?" + "id" + "=" + "sku-123", aliasSplitUrl: externalBase + "?" + externalRouteKey + "=" + "sku-123", aliasTemplateUrl: `${externalBase}?${externalRouteKey}=sku-123`, url: url.href, externalUrl: externalUrl.href, externalUrlWithBase: externalUrlWithBase.href, externalUrlFromBase: externalUrlFromBase.href, externalUrlFromPathAlias: externalUrlFromPathAlias.href, externalUrlFromObjectBase: externalUrlFromObjectBase.href, externalUrlWithQueryFromBase: externalUrlWithQueryFromBase.href, derivedExternalUrl: derivedExternalUrl.href, templateExternalUrl: templateExternalUrl.href };',
           '}'
         ].join('\n')
