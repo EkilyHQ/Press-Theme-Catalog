@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 
 const DEFAULT_PRESS_RELEASE_URL = 'https://raw.githubusercontent.com/EkilyHQ/Press/release-artifacts/system-release.json';
 const DEFAULT_OWNER = 'EkilyHQ';
-const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set([1, 2]);
+const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set([2, 3]);
 
 export async function verifyCatalog(options = {}) {
   const catalogPath = options.catalogPath || path.resolve('catalog.json');

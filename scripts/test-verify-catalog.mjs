@@ -25,7 +25,7 @@ test('verifyCatalog accepts a matching local official theme and ZIP asset', asyn
   });
 });
 
-test('verifyCatalog accepts supported v2 theme releases', async () => {
+test('verifyCatalog accepts transition v2 theme releases', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
     const theme = createThemeManifest({
       version: '3.4.3',
@@ -54,6 +54,31 @@ test('verifyCatalog accepts supported v2 theme releases', async () => {
 
     assert.equal(result.ok, true);
     assert.deepEqual(result.failures, []);
+  });
+});
+
+test('verifyCatalog rejects legacy v1 theme releases', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({ contractVersion: 1 });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
+    const bytes = await readFile(zipPath);
+    release.contractVersion = 1;
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.127'
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /contractVersion must be supported/u);
   });
 });
 
@@ -242,7 +267,7 @@ async function withFixture(callback) {
       value: 'arcus',
       label: 'Arcus',
       version: '3.4.2',
-      contractVersion: 1,
+      contractVersion: 3,
       engines: {
         press: '>=3.4.0 <4.0.0'
       },
@@ -316,7 +341,7 @@ async function createThemeZip(tempDir, slug, options = {}) {
 
 function createThemeManifest(options = {}) {
   const version = options.version || '3.4.2';
-  const contractVersion = Number.isFinite(Number(options.contractVersion)) ? Number(options.contractVersion) : 1;
+  const contractVersion = Number.isFinite(Number(options.contractVersion)) ? Number(options.contractVersion) : 3;
   const pressRange = options.pressRange || '>=3.4.0 <4.0.0';
   return {
     name: 'Arcus',
