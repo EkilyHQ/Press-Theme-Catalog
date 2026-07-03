@@ -279,6 +279,9 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route(post) { const qs = "id=" + post.id; location.search = qs; }',
     'export function route(post) { const key = "id"; let qs; qs = key + "=" + post.id; location.search = qs.toString(); }',
     'export function route(post) { const loc = location; const key = "id"; const qs = key + "=" + post.id; loc.search = qs; }',
+    'export function route(post) { const key = "id"; window.location["search"] = key + "=" + post.id; }',
+    'export function route(post) { const loc = location; const key = "id"; loc["search"] = key + "=" + post.id; }',
+    'export function route(post) { const { location: loc } = window; const key = "id"; const qs = key + "=" + post.id; loc.search = qs; }',
     'export function route(post) { const loc = window.location; const params = new URLSearchParams({ id: post.id }); loc.search = params; }',
     'export function route(post) { state.params = new URLSearchParams({ id: post.id }); return "?" + state.params; }'
   ];
@@ -305,9 +308,16 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
       pressRange: '>=3.4.130 <4.0.0'
     });
     await writeJson(themePath, theme);
+    const fixtureThemeDir = path.dirname(themePath);
+    const configSource = 'export const endpoint = "https://api.example.test/product"; export const productPath = "/product"; export const externalRoot = "https://api.example.test";\n';
+    const importedSource = 'import { endpoint, productPath, externalRoot } from "./config.js"; export function imported() { const url = new URL(endpoint); url.searchParams.set("id", "sku-123"); const url2 = new URL(productPath, externalRoot); url2.searchParams.set("id", "sku-123"); return [url.href, url2.href]; }\n';
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'config.js'), configSource);
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'imported.js'), importedSource);
     const zipPath = await createThemeZip(tempDir, 'arcus', {
       themeJson: theme,
       extraFiles: {
+        'modules/config.js': configSource,
+        'modules/imported.js': importedSource,
         'modules/layout.js': [
           'export function mount() {',
           '  const productUrl = "https://example.test/product?id=sku-123";',
@@ -321,6 +331,7 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
           '  const externalBase = "https://example.test/product";',
           '  const externalRoot = "https://example.test";',
           '  const productPath = "/product";',
+          '  const externalUrlObjectBase = new URL("https://example.test");',
           '  const externalRouteKey = "id";',
           '  const splitInlineExternal = externalBase + "?id=" + "sku-123";',
           '  const splitLiteralExternal = "https://example.test/product" + "?tab=posts";',
@@ -332,12 +343,14 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
           '  externalUrlFromBase.searchParams.set("id", "sku-123");',
           '  const externalUrlFromPathAlias = new URL(productPath, externalRoot);',
           '  externalUrlFromPathAlias.searchParams.set("id", "sku-123");',
+          '  const externalUrlFromObjectBase = new URL(productPath, externalUrlObjectBase);',
+          '  externalUrlFromObjectBase.searchParams.set("id", "sku-123");',
           '  const externalUrlWithQueryFromBase = new URL("/product?id=sku-123", externalBase);',
           '  const derivedExternalUrl = new URL(externalBase + "/details", window.location.href);',
           '  derivedExternalUrl.searchParams.set("id", "sku-123");',
           '  const templateExternalUrl = new URL(`${externalBase}/variant`, window.location.href);',
           '  templateExternalUrl.searchParams.set("id", "sku-123");',
-          '  return { productUrl, objectUrl: "https://example.test/product?" + productParams, inlineObjectUrl: "https://example.test/product?" + new URLSearchParams({ id: "sku-123" }), inlineTemplateUrl: `https://example.test/product?${new URLSearchParams({ id: "sku-123" })}`, aliasInlineTemplateUrl: `${externalBase}?${new URLSearchParams({ id: "sku-123" })}`, stringUrl: "https://example.test/product?" + stringParams, aliasStringUrl: externalBase + "?" + stringParams, grid: "https://example.test/layout?" + layoutParams, splitInlineExternal, splitLiteralExternal, splitUrl: externalBase + "?" + "id=" + "sku-123", splitKeyUrl: externalBase + "?" + "id" + "=" + "sku-123", aliasSplitUrl: externalBase + "?" + externalRouteKey + "=" + "sku-123", aliasTemplateUrl: `${externalBase}?${externalRouteKey}=sku-123`, url: url.href, externalUrl: externalUrl.href, externalUrlWithBase: externalUrlWithBase.href, externalUrlFromBase: externalUrlFromBase.href, externalUrlFromPathAlias: externalUrlFromPathAlias.href, externalUrlWithQueryFromBase: externalUrlWithQueryFromBase.href, derivedExternalUrl: derivedExternalUrl.href, templateExternalUrl: templateExternalUrl.href };',
+          '  return { productUrl, objectUrl: "https://example.test/product?" + productParams, inlineObjectUrl: "https://example.test/product?" + new URLSearchParams({ id: "sku-123" }), inlineTemplateUrl: `https://example.test/product?${new URLSearchParams({ id: "sku-123" })}`, aliasInlineTemplateUrl: `${externalBase}?${new URLSearchParams({ id: "sku-123" })}`, stringUrl: "https://example.test/product?" + stringParams, aliasStringUrl: externalBase + "?" + stringParams, grid: "https://example.test/layout?" + layoutParams, splitInlineExternal, splitLiteralExternal, splitUrl: externalBase + "?" + "id=" + "sku-123", splitKeyUrl: externalBase + "?" + "id" + "=" + "sku-123", aliasSplitUrl: externalBase + "?" + externalRouteKey + "=" + "sku-123", aliasTemplateUrl: `${externalBase}?${externalRouteKey}=sku-123`, url: url.href, externalUrl: externalUrl.href, externalUrlWithBase: externalUrlWithBase.href, externalUrlFromBase: externalUrlFromBase.href, externalUrlFromPathAlias: externalUrlFromPathAlias.href, externalUrlFromObjectBase: externalUrlFromObjectBase.href, externalUrlWithQueryFromBase: externalUrlWithQueryFromBase.href, derivedExternalUrl: derivedExternalUrl.href, templateExternalUrl: templateExternalUrl.href };',
           '}'
         ].join('\n')
       }
@@ -350,6 +363,13 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
     release.asset.url = pathToFileURL(zipPath).href;
     release.asset.size = bytes.length;
     release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    release.files = [
+      'modules/config.js',
+      'modules/imported.js',
+      'modules/layout.js',
+      'theme.css',
+      'theme.json'
+    ];
     await writeJson(releasePath, release);
 
     const result = await verifyCatalog({

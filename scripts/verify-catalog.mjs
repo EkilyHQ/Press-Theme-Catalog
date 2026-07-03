@@ -344,15 +344,20 @@ async function inspectZip(bytes, expectedRoot) {
       .filter((entry) => entry.startsWith(rootPrefix) && !entry.endsWith('/'))
       .map((entry) => entry.slice(rootPrefix.length));
     const routeLiteralFiles = [];
+    const routeLiteralSources = [];
     for (const file of files) {
       if (!shouldScanForPublicRouteLiterals(file)) continue;
       try {
         const contents = runUnzip(['-p', zipPath, `${expectedRoot}/${file}`]);
-        if (containsForbiddenV4RouteConstruction(contents)) routeLiteralFiles.push(file);
+        routeLiteralSources.push({ file, contents });
       } catch (error) {
         failures.push(`ZIP source file ${file} could not be scanned: ${error.message}`);
       }
     }
+    const routeGuardContext = routeLiteralSources.map((entry) => entry.contents).join('\n');
+    routeLiteralSources.forEach(({ file, contents }) => {
+      if (containsForbiddenV4RouteConstruction(contents, routeGuardContext)) routeLiteralFiles.push(file);
+    });
     return {
       failures,
       files,
@@ -479,6 +484,15 @@ function collectExternalUrlAliases(source) {
   while (match) {
     if (isExternalUrlPrefix(match[3])) aliases.add(match[1]);
     match = re.exec(text);
+  }
+  const staticRelativeAliases = collectStaticRelativeUrlAliases(text);
+  const urlRe = new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+URL\\s*\\(`, 'gu');
+  match = urlRe.exec(text);
+  while (match) {
+    const parsed = extractCallArgs(text, urlRe.lastIndex);
+    if (urlConstructorArgsAreExternal(parsed.args, aliases, staticRelativeAliases)) aliases.add(match[1]);
+    if (parsed.end > urlRe.lastIndex) urlRe.lastIndex = parsed.end;
+    match = urlRe.exec(text);
   }
   return aliases;
 }
@@ -806,7 +820,7 @@ function inlineUrlSearchParamsHasRelativeSink(source, callStart) {
   if (template) {
     return !templateRouteContentHasExternalPrefix(text, template[1]);
   }
-  return /\b(?:window\s*\.\s*)?location\s*\.\s*search\s*=\s*$/u.test(before);
+  return new RegExp(`${locationSearchWritePattern(collectLocationAliases(text)).source}\\s*$`, 'u').test(before);
 }
 
 function containsForbiddenInlineUrlSearchParamsInitializer(source, aliases = new Set()) {
@@ -903,11 +917,9 @@ function urlConstructorArgsAreExternal(args, aliases = new Set(), staticRelative
     && expressionIsExternalUrl(parts[1], aliases);
 }
 
-function collectRouteUrlVariables(source) {
+function collectRouteUrlVariables(source, externalAliases = collectExternalUrlAliases(source), staticRelativeAliases = collectStaticRelativeUrlAliases(source)) {
   const text = String(source || '');
   const out = new Set();
-  const aliases = collectExternalUrlAliases(text);
-  const staticRelativeAliases = collectStaticRelativeUrlAliases(text);
   [
     new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+URL\\s*\\(`, 'gu'),
     new RegExp(`(?:^|[^\\w$.])(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+URL\\s*\\(`, 'gu')
@@ -915,7 +927,7 @@ function collectRouteUrlVariables(source) {
     let match = re.exec(text);
     while (match) {
       const parsed = extractCallArgs(text, re.lastIndex);
-      if (!urlConstructorArgsAreExternal(parsed.args, aliases, staticRelativeAliases)) out.add(match[1]);
+      if (!urlConstructorArgsAreExternal(parsed.args, externalAliases, staticRelativeAliases)) out.add(match[1]);
       if (parsed.end > re.lastIndex) re.lastIndex = parsed.end;
       match = re.exec(text);
     }
@@ -936,6 +948,18 @@ function collectLocationAliases(source) {
       match = re.exec(text);
     }
   });
+  const destructureRe = /\b(?:const|let|var)\s*\{([\s\S]*?)\}\s*=\s*window\b/gu;
+  let destructure = destructureRe.exec(text);
+  while (destructure) {
+    const body = destructure[1] || '';
+    const aliasRe = /(?:^|,)\s*location\s*:\s*([A-Za-z_$][\w$]*)/gu;
+    let alias = aliasRe.exec(body);
+    while (alias) {
+      out.add(alias[1]);
+      alias = aliasRe.exec(body);
+    }
+    destructure = destructureRe.exec(text);
+  }
   return out;
 }
 
@@ -944,12 +968,13 @@ function locationSearchWritePattern(locationAliases = new Set()) {
   const ownerPattern = aliasPatterns.length
     ? `(?:\\b(?:window\\s*\\.\\s*)?location|${aliasPatterns.join('|')})`
     : '\\b(?:window\\s*\\.\\s*)?location';
-  return new RegExp(`${ownerPattern}\\s*\\.\\s*search\\s*(?:\\+=|=(?!=|>))`, 'gu');
+  const searchProperty = `(?:\\.\\s*search|\\[\\s*(['"\`])search\\1\\s*\\])`;
+  return new RegExp(`${ownerPattern}\\s*${searchProperty}\\s*(?:\\+=|=(?!=|>))`, 'gu');
 }
 
-function containsForbiddenRouteUrlMutation(source, aliases) {
+function containsForbiddenRouteUrlMutation(source, aliases, externalAliases, staticRelativeAliases) {
   const text = String(source || '');
-  const vars = collectRouteUrlVariables(text);
+  const vars = collectRouteUrlVariables(text, externalAliases, staticRelativeAliases);
   for (const name of vars) {
     if (containsRouteKeyWriteForOwner(text, name, aliases, 'searchParams')) return true;
     const paramsAliases = collectSearchParamsAliasesForRouteUrl(text, name);
@@ -1038,10 +1063,12 @@ function containsForbiddenLocationSearchAssignment(source, aliases = new Set()) 
   return false;
 }
 
-function containsForbiddenV4RouteConstruction(source) {
+function containsForbiddenV4RouteConstruction(source, contextSource = source) {
   const text = String(source || '');
+  const context = String(contextSource || '');
   const aliases = collectRouteKeyAliases(text);
-  const externalAliases = collectExternalUrlAliases(text);
+  const externalAliases = collectExternalUrlAliases(context);
+  const staticRelativeAliases = collectStaticRelativeUrlAliases(context);
   const inlineSearchParamsAliases = collectInlineUrlSearchParamsAliases(text);
   return containsForbiddenRouteLiteral(text, externalAliases)
     || containsForbiddenLocationSearchAssignment(text, aliases)
@@ -1050,7 +1077,7 @@ function containsForbiddenV4RouteConstruction(source) {
     || containsForbiddenSplitRouteQueryLiteral(text)
     || containsForbiddenRouteKeyAliasConstruction(text, aliases)
     || containsForbiddenUrlSearchParamsVariable(text, aliases)
-    || containsForbiddenRouteUrlMutation(text, aliases)
+    || containsForbiddenRouteUrlMutation(text, aliases, externalAliases, staticRelativeAliases)
     || Array.from(inlineSearchParamsAliases).some((name) => (
       containsRouteKeyWriteForOwner(text, name, aliases) && containsRelativeParamsSerialization(text, name)
     ));
