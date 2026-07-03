@@ -1250,6 +1250,22 @@ function containsForbiddenRouteUrlMutation(source, aliases, externalAliases, sta
   return false;
 }
 
+function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, externalAliases, staticRelativeAliases) {
+  const text = String(source || '');
+  const re = new RegExp(`\\(\\s*(?:async\\s*)?\\(?\\s*(${IDENTIFIER_PATTERN.source})\\s*\\)?\\s*=>\\s*\\(([\\s\\S]*?)\\)\\s*\\)\\s*\\(\\s*new\\s+URL\\s*\\(`, 'gu');
+  let match = re.exec(text);
+  while (match) {
+    const parsed = extractCallArgs(text, re.lastIndex);
+    if (!urlConstructorArgsAreExternal(parsed.args, externalAliases, staticRelativeAliases)
+      && containsRouteKeyWriteForOwner(match[2] || '', match[1], aliases, 'searchParams')) {
+      return true;
+    }
+    if (parsed.end > re.lastIndex) re.lastIndex = parsed.end;
+    match = re.exec(text);
+  }
+  return false;
+}
+
 function collectSearchParamsAliasesForRouteUrl(source, owner) {
   const text = String(source || '');
   const out = new Set();
@@ -1343,6 +1359,7 @@ function containsForbiddenV4RouteConstruction(source, contextSource = source) {
     || containsForbiddenRouteKeyAliasConstruction(text, aliases)
     || containsForbiddenUrlSearchParamsVariable(text, aliases)
     || containsForbiddenRouteUrlMutation(text, aliases, externalAliases, staticRelativeAliases)
+    || containsForbiddenInlineRouteUrlCallbackMutation(text, aliases, externalAliases, staticRelativeAliases)
     || Array.from(inlineSearchParamsAliases).some((name) => (
       containsRouteKeyWriteForOwner(text, name, aliases) && containsRelativeParamsSerialization(text, name)
     ));
