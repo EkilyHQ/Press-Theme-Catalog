@@ -342,9 +342,12 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route() { const url = new URL(location.href); url.searchParams.set(("id"), "post.md"); return url.href; }',
     'export function route() { const url = new URL(location.href); url.searchParams.set((("id")), "post.md"); return url.href; }',
     'export function route(post) { const unused = 1, key = "id"; const url = new URL(location.href); url.searchParams.set(key, post.id); return url.href; }',
+    'export function route(post) { const key = "\\u0069d"; const url = new URL(location.href); url.searchParams.set(key, post.id); return url.href; }',
     'export function route(post) { const routeKeys = { post: "id" }; const url = new URL(location.href); url.searchParams.set(routeKeys.post, post.id); return url.href; }',
+    'export function route(post) { const routeKeys = { post: "\\u0069d" }; const url = new URL(location.href); url.searchParams.set(routeKeys.post, post.id); return url.href; }',
     'export function route(post) { const routeKeys = { post: "id" }; const url = new URL(location.href); url.searchParams.set(routeKeys["post"], post.id); return url.href; }',
     'export function route(post) { const routeKeys = { post: "id" }; const url = new URL(location.href); url.searchParams.set(routeKeys?.["post"], post.id); return url.href; }',
+    'export const href = "?\\u0069d=post.md";',
     'export function route(post) { let params; params = new URLSearchParams({ id: post.id }); return "?" + params; }',
     'export function route(post) { const Params = URLSearchParams; const params = new Params({ id: post.id }); return "?" + params; }',
     'export function route(post) { const WindowParams = window.URLSearchParams; const params = new WindowParams({ id: post.id }); return "?" + params; }',
@@ -353,12 +356,16 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route(post) { const params = enabled ? new URLSearchParams({ id: post.id }) : new URLSearchParams(); return "?" + params; }',
     'export function route(post) { const url = new URL(location.href); const params = url.searchParams; params.set("id", post.id); return url.href; }',
     'export function route(post) { const url = new URL(location.href); url.searchParams.delete("id"); return url.href; }',
+    'export function route(post) { const url = new URL(location.href); url.searchParams.set.call(url.searchParams, "id", post.id); return url.href; }',
+    'export function route(post) { const url = new URL(location.href); url.searchParams.set.apply(url.searchParams, ["id", post.id]); return url.href; }',
     'export function route(post) { const url = new URL(location.href); const remove = url.searchParams.delete.bind(url.searchParams); remove("id"); return url.href; }',
     'export function route(post) { const key = "tab"; const url = new URL(location.href); let params; params = url.searchParams; params.append(key, "posts"); return url.href; }',
     'export function route(post) { const url = new URL(location.href); const params = (url.searchParams); params.set("id", post.id); return url.href; }',
     'export function route(post) { const url = new URL(location.href); const { searchParams } = url; searchParams.set("id", post.id); return url.href; }',
     'export function route(post) { const url = new URL(location.href); const { searchParams: params } = url; params.set("id", post.id); return url.href; }',
     'export function route(post) { const params = new URL(location.href).searchParams; params.set("id", post.id); return "?" + params; }',
+    'export function route(post) { new URL(location.href).searchParams.set("id", post.id); }',
+    'export function route(post) { const url = new window.URL(location.href); url.searchParams.set("id", post.id); return url.href; }',
     'export function route(post) { const { searchParams } = new URL(location.href); searchParams.set("id", post.id); return `?${searchParams}`; }',
     'export function route(post) { const params = new URLSearchParams(Object.entries({ id: post.id })); return "?" + params; }',
     'export function route(post) { const params = new URLSearchParams(new Map([["id", post.id]])); return "?" + params; }',
@@ -386,6 +393,16 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
   }
   await assertV4PackagedSourceRejected(
     'import { key } from "./config.js"; export function route(post) { const url = new URL(location.href); url.searchParams.set(key, post.id); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const key = "id";\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import routeKey from "./config.js"; export function route(post) { const url = new URL(location.href); url.searchParams.set(routeKey, post.id); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export default "\\u0069d";\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import * as config from "./config.js"; export function route(post) { const url = new URL(location.href); url.searchParams.set(config.key, post.id); return url.href; }',
     'modules/interactions.js',
     { 'modules/config.js': 'export const key = "id";\n' }
   );
@@ -622,6 +639,8 @@ test('verifyCatalog scans v4 SVG and HTML packaged route attributes', async () =
   await assertV4PackagedSourceRejected('<p>https://example.test</p><a href="?id=post.md">Post</a>', 'assets/https-before-link.html');
   await assertV4PackagedSourceRejected('<img srcset="?id=post.md 1x, ?tab=posts 2x">', 'assets/srcset.html');
   await assertV4PackagedSourceRejected('<script>location.search = "id=" + post.location;</script>', 'assets/inline-script.html');
+  await assertV4PackagedSourceRejected('<script>location.search = "id=" + post.location;</script\t\n data-x>', 'assets/loose-inline-script.html');
+  await assertV4PackagedSourceRejected(`<button onclick="location.search = '?id=post.md'">Open</button>`, 'assets/event-handler.html');
 });
 
 test('verifyCatalog does not scan static v4 assets as executable route code', async () => {
@@ -767,6 +786,12 @@ test('verifyCatalog avoids v4 helper-mutation false positives across nested shad
 test('verifyCatalog avoids v4 simple helper false positives on object methods', async () => {
   await assertV4PackagedSourceAccepted(
     'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } const helper = { mutate(url) { return url.href; } }; return helper.mutate(new URL(location.href)); }'
+  );
+});
+
+test('verifyCatalog allows external URL object member aliases', async () => {
+  await assertV4PackagedSourceAccepted(
+    'export function route(sku) { const endpoints = { product: "https://api.example.test/product" }; const url = new URL(endpoints.product); url.searchParams.set("id", sku); return url.href; }'
   );
 });
 

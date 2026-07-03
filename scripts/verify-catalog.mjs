@@ -22,6 +22,7 @@ const SPLIT_ROUTE_QUERY_LITERAL_PATTERN = /(['"`])((?:\\[\s\S]|(?!\1)[\s\S])*?[?
 const IDENTIFIER_PATTERN = /[A-Za-z_$][\w$]*/u;
 const MEMBER_EXPRESSION_PATTERN_SOURCE = `(?:this|${IDENTIFIER_PATTERN.source})(?:\\s*\\.\\s*${IDENTIFIER_PATTERN.source})+`;
 const ROUTE_KEY_LITERAL_EXPRESSION_PATTERN_SOURCE = `(?:"(?:tab|id)"|'(?:tab|id)'|\`(?:tab|id)\`)`;
+const URL_CONSTRUCTOR_PATTERN_SOURCE = `(?:URL|(?:window|globalThis)\\s*\\.\\s*URL)`;
 
 export async function verifyCatalog(options = {}) {
   const catalogPath = options.catalogPath || path.resolve('catalog.json');
@@ -571,7 +572,7 @@ function containsRelativePressRouteLiteral(content) {
 function stringLiteralIsExternalUrlConstructorArg(source, literalMatch, externalAliases = new Set()) {
   const text = String(source || '');
   const before = text.slice(0, literalMatch.index);
-  const callMatch = before.match(/\bnew\s+URL\s*\(\s*(?:\(\s*)*$/u);
+  const callMatch = before.match(new RegExp(`\\bnew\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(\\s*(?:\\(\\s*)*$`, 'u'));
   if (!callMatch) return false;
   const callPrefixIndex = before.length - callMatch[0].length;
   const argsStart = callPrefixIndex + callMatch[0].indexOf('(') + 1;
@@ -587,7 +588,7 @@ function containsForbiddenRouteLiteral(source, externalAliases = new Set()) {
   STRING_LITERAL_PATTERN.lastIndex = 0;
   let match = STRING_LITERAL_PATTERN.exec(text);
   while (match) {
-    if (containsRelativePressRouteLiteral(match[2])
+    if (containsRelativePressRouteLiteral(decodeJsStringLiteralContent(match[2]))
       && !stringLiteralIsExternalUrlConstructorArg(text, match, externalAliases)
       && !stringLiteralHasExternalRouteContext(text, match, externalAliases)) {
       return true;
@@ -626,6 +627,19 @@ function decodeHtmlAttributeValue(value) {
       if (key === 'quest') return '?';
       return entity;
     });
+}
+
+function decodeJsStringLiteralContent(value) {
+  return String(value || '')
+    .replace(/\\u\{([0-9a-f]+)\}/giu, (_, raw) => {
+      const code = Number.parseInt(raw, 16);
+      return Number.isFinite(code) && code >= 0 && code <= 0x10ffff
+        ? String.fromCodePoint(code)
+        : _;
+    })
+    .replace(/\\u([0-9a-f]{4})/giu, (_, raw) => String.fromCharCode(Number.parseInt(raw, 16)))
+    .replace(/\\x([0-9a-f]{2})/giu, (_, raw) => String.fromCharCode(Number.parseInt(raw, 16)))
+    .replace(/\\([\\'"`?&=])/gu, '$1');
 }
 
 function shouldScanHtmlRouteAttributes(path, source) {
@@ -671,7 +685,14 @@ function expressionReferencePattern(expression) {
 }
 
 function expressionHasRouteKeyLiteral(expression) {
-  return /(?:"(?:tab|id)"|'(?:tab|id)'|`(?:tab|id)`)/u.test(String(expression || ''));
+  STRING_LITERAL_PATTERN.lastIndex = 0;
+  const text = String(expression || '');
+  let match = STRING_LITERAL_PATTERN.exec(text);
+  while (match) {
+    if (/^(?:tab|id)$/u.test(decodeJsStringLiteralContent(match[2]))) return true;
+    match = STRING_LITERAL_PATTERN.exec(text);
+  }
+  return false;
 }
 
 function addRouteKeyObjectAliases(aliases, name, initializer) {
@@ -686,6 +707,19 @@ function addRouteKeyObjectAliases(aliases, name, initializer) {
     if (expressionHasRouteKeyLiteral(field[4]) || aliases.has(stripWrappingParentheses(field[4]))) {
       aliases.add(`${name}.${key}`);
     }
+  });
+}
+
+function addExternalUrlObjectAliases(aliases, name, initializer) {
+  const text = stripWrappingParentheses(initializer);
+  if (!text.startsWith('{')) return;
+  const body = text.endsWith('}') ? text.slice(1, -1) : text.slice(1);
+  splitTopLevelArgs(body).forEach((part) => {
+    const field = String(part || '').trim().match(/^(?:([A-Za-z_$][\w$]*)|(['"`])([^'"`]+)\2)\s*:\s*([\s\S]+)$/u);
+    if (!field) return;
+    const key = field[1] || field[3] || '';
+    if (!/^[A-Za-z_$][\w$]*$/u.test(key)) return;
+    if (expressionIsExternalUrl(field[4], aliases)) aliases.add(`${name}.${key}`);
   });
 }
 
@@ -711,10 +745,10 @@ function collectRouteKeyAliases(source) {
     });
     match = declarationRe.exec(text);
   }
-  const defaultRe = /\bexport\s+default\s*(?:\(\s*)*(['"`])(tab|id)\1(?:\s*\))*\s*;?/gu;
+  const defaultRe = /\bexport\s+default\s*(?:\(\s*)*((['"`])(?:\\[\s\S]|(?!\2)[\s\S])*?\2)(?:\s*\))*\s*;?/gu;
   match = defaultRe.exec(text);
   while (match) {
-    aliases.add('default');
+    if (expressionHasRouteKeyLiteral(match[1])) aliases.add('default');
     match = defaultRe.exec(text);
   }
   const defaultIdentifierRe = /\bexport\s+default\s*(?:\(\s*)*([A-Za-z_$][\w$]*)(?:\s*\))*\s*;?/gu;
@@ -751,7 +785,16 @@ function collectExternalUrlAliases(source) {
     match = re.exec(text);
   }
   const staticRelativeAliases = collectStaticRelativeUrlAliases(text);
-  const urlRe = new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+URL\\s*\\(`, 'gu');
+  const declarationRe = /\b(?:const|let|var)\s+([^;]+)/gu;
+  match = declarationRe.exec(text);
+  while (match) {
+    splitTopLevelArgs(match[1]).forEach((part) => {
+      const declarator = String(part || '').trim().match(/^([A-Za-z_$][\w$]*)\s*=\s*([\s\S]+)$/u);
+      if (declarator) addExternalUrlObjectAliases(aliases, declarator[1], declarator[2]);
+    });
+    match = declarationRe.exec(text);
+  }
+  const urlRe = new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu');
   match = urlRe.exec(text);
   while (match) {
     const parsed = extractCallArgs(text, urlRe.lastIndex);
@@ -831,6 +874,12 @@ function collectStaticRelativeUrlAliases(source) {
 function collectNamedImports(source) {
   const text = String(source || '');
   const imports = [];
+  const namespaceRe = /\bimport\s+\*\s+as\s+([A-Za-z_$][\w$]*)\s+from\s*(['"])([^'"]+)\2/gu;
+  let namespaceMatch = namespaceRe.exec(text);
+  while (namespaceMatch) {
+    imports.push({ importedName: '*', localName: namespaceMatch[1], specifier: namespaceMatch[3] });
+    namespaceMatch = namespaceRe.exec(text);
+  }
   const defaultRe = /\bimport\s+([A-Za-z_$][\w$]*)(?:\s*,\s*\{[\s\S]*?\})?\s*from\s*(['"])([^'"]+)\2/gu;
   let defaultMatch = defaultRe.exec(text);
   while (defaultMatch) {
@@ -1257,6 +1306,12 @@ function mergeImportedContextAliases(localAliases, collector, source, context, o
     const target = targetPath ? context.files.find((file) => file.path === targetPath) : null;
     if (!target) return;
     const contextAliases = collectContextFileAliases(target, collector, context);
+    if (importedName === '*') {
+      if (!shadowed.has(localName)) {
+        contextAliases.forEach((alias) => out.add(`${localName}.${alias}`));
+      }
+      return;
+    }
     if (contextAliases.has(importedName) && !shadowed.has(localName)) out.add(localName);
   });
   return out;
@@ -1264,6 +1319,8 @@ function mergeImportedContextAliases(localAliases, collector, source, context, o
 
 function sourceArgIsRouteKey(arg, aliases) {
   const value = String(arg || '').trim();
+  const literal = value.match(/^(['"`])((?:\\[\s\S]|(?!\1)[\s\S])*?)\1$/u);
+  if (literal && /^(?:tab|id)$/u.test(decodeJsStringLiteralContent(literal[2]))) return true;
   return new RegExp(`^(?:${routeKeyExpressionPattern(aliases)})$`, 'u').test(value);
 }
 
@@ -1278,6 +1335,15 @@ function routeKeyWritePattern(owner, property = '') {
   const mutator = `(?:${propertyAccessorPattern('set')}|${propertyAccessorPattern('append')}|${propertyAccessorPattern('delete')})`;
   const parenthesizedRouteKey = `(?:\\(\\s*)*(?:${IDENTIFIER_PATTERN.source}|${ROUTE_KEY_LITERAL_EXPRESSION_PATTERN_SOURCE})(?:\\s*\\))*`;
   return new RegExp(`${ownerPattern}${suffix}${mutator}\\s*(?:\\?\\.\\s*)?\\(\\s*(${parenthesizedRouteKey}|[^,\\)]+)\\s*(?:,|\\))`, 'gu');
+}
+
+function routeKeyDispatchPattern(owner, property = '') {
+  const ownerPattern = expressionReferencePattern(owner);
+  const suffix = property ? propertyAccessorPattern(property) : '';
+  const target = `${ownerPattern}${suffix}`;
+  const mutator = `(?:${propertyAccessorPattern('set')}|${propertyAccessorPattern('append')}|${propertyAccessorPattern('delete')})`;
+  const parenthesizedRouteKey = `(?:\\(\\s*)*(?:${IDENTIFIER_PATTERN.source}|${ROUTE_KEY_LITERAL_EXPRESSION_PATTERN_SOURCE})(?:\\s*\\))*`;
+  return new RegExp(`${target}${mutator}\\s*\\.\\s*(?:call|apply)\\s*\\(\\s*${target}\\s*,\\s*(?:\\[\\s*)?(${parenthesizedRouteKey}|[^,\\]\\)]+)`, 'gu');
 }
 
 function collectBoundRouteMutators(source, owner, property = '') {
@@ -1303,6 +1369,12 @@ function containsRouteKeyWriteForOwner(source, owner, aliases, property = '') {
   while (match) {
     if (sourceArgIsRouteKey(match[1], aliases)) return true;
     match = re.exec(text);
+  }
+  const dispatchRe = routeKeyDispatchPattern(owner, property);
+  match = dispatchRe.exec(text);
+  while (match) {
+    if (sourceArgIsRouteKey(match[1], aliases)) return true;
+    match = dispatchRe.exec(text);
   }
   const parenthesizedRouteKey = `(?:\\(\\s*)*(?:${IDENTIFIER_PATTERN.source}|${ROUTE_KEY_LITERAL_EXPRESSION_PATTERN_SOURCE})(?:\\s*\\))*`;
   for (const mutator of collectBoundRouteMutators(text, owner, property)) {
@@ -1838,7 +1910,7 @@ function collectRouteUrlFactoryAliases(source, externalAliases = collectExternal
   const text = String(source || '');
   const out = new Set();
   const bodyReturnsRouteUrl = (body) => {
-    const re = /\breturn\s+(?:\(\s*)*new\s+URL\s*\(/gu;
+    const re = new RegExp(`\\breturn\\s+(?:\\(\\s*)*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu');
     let match = re.exec(body);
     while (match) {
       const parsed = extractCallArgs(body, re.lastIndex);
@@ -1850,7 +1922,7 @@ function collectRouteUrlFactoryAliases(source, externalAliases = collectExternal
   };
   const expressionReturnsRouteUrl = (expression) => {
     const value = stripWrappingParentheses(expression);
-    const match = value.match(/^new\s+URL\s*\(/u);
+    const match = value.match(new RegExp(`^new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'u'));
     if (!match) return false;
     const parsed = extractCallArgs(value, match[0].length);
     return !urlConstructorArgsAreExternal(parsed.args, externalAliases, staticRelativeAliases);
@@ -1889,9 +1961,9 @@ function collectRouteUrlVariables(source, externalAliases = collectExternalUrlAl
   const out = new Set();
   const factories = collectRouteUrlFactoryAliases(text, externalAliases, staticRelativeAliases);
   [
-    new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+URL\\s*\\(`, 'gu'),
-    new RegExp(`(?:^|[^\\w$.])(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+URL\\s*\\(`, 'gu'),
-    new RegExp(`(?:^|[^\\w$])(${MEMBER_EXPRESSION_PATTERN_SOURCE})\\s*=\\s*new\\s+URL\\s*\\(`, 'gu')
+    new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu'),
+    new RegExp(`(?:^|[^\\w$.])(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu'),
+    new RegExp(`(?:^|[^\\w$])(${MEMBER_EXPRESSION_PATTERN_SOURCE})\\s*=\\s*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu')
   ].forEach((re) => {
     let match = re.exec(text);
     while (match) {
@@ -2026,7 +2098,7 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
       if (value.slice(parsed.end).trim()) break;
       value = parsed.args.trim();
     }
-    const match = value.match(/^new\s+URL\s*\(/u);
+    const match = value.match(new RegExp(`^new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'u'));
     if (!match) return false;
     const parsed = extractCallArgs(value, match[0].length);
     return !urlConstructorArgsAreExternal(parsed.args, externalAliases, staticRelativeAliases);
@@ -2311,8 +2383,8 @@ function collectInlineUrlSearchParamsAliases(source) {
   const out = new Set();
   const searchParamsAccess = propertyAccessorPattern('searchParams');
   [
-    new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*new\\s+URL\\s*\\(`, 'gu'),
-    new RegExp(`(?:^|[^\\w$.])(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*new\\s+URL\\s*\\(`, 'gu')
+    new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu'),
+    new RegExp(`(?:^|[^\\w$.])(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu')
   ].forEach((re) => {
     let match = re.exec(text);
     while (match) {
@@ -2323,7 +2395,7 @@ function collectInlineUrlSearchParamsAliases(source) {
       match = re.exec(text);
     }
   });
-  const destructureRe = /\b(?:const|let|var)\s*\{([\s\S]*?)\}\s*=\s*new\s+URL\s*\(/gu;
+  const destructureRe = new RegExp(`\\b(?:const|let|var)\\s*\\{([\\s\\S]*?)\\}\\s*=\\s*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu');
   let destructure = destructureRe.exec(text);
   while (destructure) {
     const parsed = extractCallArgs(text, destructureRe.lastIndex);
@@ -2339,6 +2411,26 @@ function collectInlineUrlSearchParamsAliases(source) {
     destructure = destructureRe.exec(text);
   }
   return out;
+}
+
+function containsForbiddenInlineRouteUrlSearchParamsMutation(source, aliases, externalAliases, staticRelativeAliases) {
+  const text = String(source || '');
+  const searchParamsAccess = propertyAccessorPattern('searchParams');
+  const mutator = `(?:${propertyAccessorPattern('set')}|${propertyAccessorPattern('append')}|${propertyAccessorPattern('delete')})`;
+  const parenthesizedRouteKey = `(?:\\(\\s*)*(?:${IDENTIFIER_PATTERN.source}|${ROUTE_KEY_LITERAL_EXPRESSION_PATTERN_SOURCE})(?:\\s*\\))*`;
+  const re = new RegExp(`\\bnew\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu');
+  let match = re.exec(text);
+  while (match) {
+    const parsed = extractCallArgs(text, re.lastIndex);
+    if (!urlConstructorArgsAreExternal(parsed.args, externalAliases, staticRelativeAliases)) {
+      const suffixRe = new RegExp(`^\\s*(?:\\))*${searchParamsAccess}${mutator}\\s*(?:\\?\\.\\s*)?\\(\\s*(${parenthesizedRouteKey}|[^,\\)]+)\\s*(?:,|\\))`, 'u');
+      const suffix = text.slice(parsed.end).match(suffixRe);
+      if (suffix && sourceArgIsRouteKey(suffix[1], aliases)) return true;
+    }
+    if (parsed.end > re.lastIndex) re.lastIndex = parsed.end;
+    match = re.exec(text);
+  }
+  return false;
 }
 
 function containsForbiddenSearchAssignment(source, re, aliases = new Set()) {
@@ -2375,6 +2467,7 @@ function containsForbiddenExecutableRouteCode(text, aliases, externalAliases, st
     || containsForbiddenRouteKeyAliasConstruction(text, aliases, externalAliases)
     || containsForbiddenUrlSearchParamsVariable(text, aliases, externalAliases)
     || containsForbiddenRouteUrlMutation(text, aliases, externalAliases, staticRelativeAliases)
+    || containsForbiddenInlineRouteUrlSearchParamsMutation(text, aliases, externalAliases, staticRelativeAliases)
     || containsForbiddenInlineRouteUrlCallbackMutation(text, aliases, externalAliases, staticRelativeAliases)
     || Array.from(inlineSearchParamsAliases).some((name) => (
       containsRouteKeyWriteForOwner(text, name, aliases) && containsRelativeParamsSerialization(text, name, new Set(), externalAliases)
@@ -2485,7 +2578,7 @@ function scriptTypeAllowsRouteScan(attrs) {
 
 function containsForbiddenHtmlInlineRouteCode(source, aliases, externalAliases, staticRelativeAliases) {
   const text = stripHtmlCommentsForRouteGuard(source);
-  const re = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/giu;
+  const re = /<script\b([^>]*)>([\s\S]*?)<\/script(?=[\s>])[^>]*>/giu;
   let match = re.exec(text);
   while (match) {
     if (!scriptTypeAllowsRouteScan(match[1] || '')) {
@@ -2495,6 +2588,21 @@ function containsForbiddenHtmlInlineRouteCode(source, aliases, externalAliases, 
     const script = stripCommentsForRouteGuard(match[2] || '');
     if (containsForbiddenExecutableRouteCode(script, aliases, externalAliases, staticRelativeAliases)
       || containsForbiddenShadowedExternalAliasRouteCode(script, aliases, externalAliases, externalAliases, staticRelativeAliases)) {
+      return true;
+    }
+    match = re.exec(text);
+  }
+  return false;
+}
+
+function containsForbiddenHtmlEventHandlerRouteCode(source, aliases, externalAliases, staticRelativeAliases) {
+  const text = stripHtmlCommentsForRouteGuard(source);
+  const re = /\bon[a-z][\w:-]*\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'`<>]+))/giu;
+  let match = re.exec(text);
+  while (match) {
+    const handler = stripCommentsForRouteGuard(decodeHtmlAttributeValue(match[1] || match[2] || match[3] || ''));
+    if (containsForbiddenExecutableRouteCode(handler, aliases, externalAliases, staticRelativeAliases)
+      || containsForbiddenShadowedExternalAliasRouteCode(handler, aliases, externalAliases, externalAliases, staticRelativeAliases)) {
       return true;
     }
     match = re.exec(text);
@@ -2519,7 +2627,8 @@ function containsForbiddenV4RouteConstruction(source, contextSource = source) {
     || (shouldScanHtmlRouteAttributes(context.path, rawText)
       && containsForbiddenHtmlRouteAttribute(stripHtmlCommentsForRouteGuard(rawText)))
     || ((/\.(?:html?|svg)$/iu.test(String(context.path || '')))
-      && containsForbiddenHtmlInlineRouteCode(rawText, aliases, externalAliases, staticRelativeAliases));
+      && (containsForbiddenHtmlInlineRouteCode(rawText, aliases, externalAliases, staticRelativeAliases)
+        || containsForbiddenHtmlEventHandlerRouteCode(rawText, aliases, externalAliases, staticRelativeAliases)));
 }
 
 function runUnzip(args) {
