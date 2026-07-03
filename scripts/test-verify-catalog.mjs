@@ -25,7 +25,7 @@ test('verifyCatalog accepts a matching local official theme and ZIP asset', asyn
   });
 });
 
-test('verifyCatalog accepts transition v2 theme releases', async () => {
+test('verifyCatalog rejects transition v2 theme releases after cleanup', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
     const theme = createThemeManifest({
       version: '3.4.3',
@@ -52,8 +52,8 @@ test('verifyCatalog accepts transition v2 theme releases', async () => {
       pressVersion: '3.4.121'
     });
 
-    assert.equal(result.ok, true);
-    assert.deepEqual(result.failures, []);
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /contractVersion must be supported/u);
   });
 });
 
