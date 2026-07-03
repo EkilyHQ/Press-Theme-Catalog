@@ -18,9 +18,21 @@ Catalog changes must pass the official theme verifier before merge:
 
 ```bash
 node scripts/test-verify-catalog.mjs
-node scripts/verify-catalog.mjs --catalog catalog.json --workspace-root .. --no-remote
-node scripts/verify-catalog.mjs --catalog catalog.json --remote --verify-assets
+node scripts/verify-catalog.mjs --catalog catalog.json --remote --verify-assets --press-version 3.4.130
 ```
+
+When local theme source and root `theme-release.json` files describe the same
+published release, the verifier can also compare adjacent workspace checkouts:
+
+```bash
+node scripts/verify-catalog.mjs --catalog catalog.json --workspace-root .. --no-remote
+```
+
+Do not use that local workspace check as the transition-release gate while the
+theme source branches have already moved to contract v4 but the published root
+release manifests still describe the current v3 releases. In that coordinated
+state, remote asset verification is the source of truth until the v4 theme
+releases are published.
 
 The verifier checks catalog identity fields, duplicate entries, repository and
 manifest URL consistency, theme-release metadata, Press engine compatibility,
