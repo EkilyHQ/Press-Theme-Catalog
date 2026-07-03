@@ -574,6 +574,12 @@ test('verifyCatalog avoids v4 helper-mutation false positives across scopes', as
   );
 });
 
+test('verifyCatalog avoids v4 helper-mutation false positives across nested shadows', async () => {
+  await assertV4PackagedSourceAccepted(
+    'export function route(ok) { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } const helper = { mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } }; if (ok) { function mutate(url) { return url.href; } const helper = { mutate(url) { return url.href; } }; return { direct: mutate(new URL(location.href)), member: helper.mutate(new URL(location.href)) }; } return null; }'
+  );
+});
+
 test('verifyCatalog avoids semicolonless expression-arrow shadow false positives', async () => {
   await assertV4PackagedSourceAccepted(
     'import { endpoint } from "./config.js"; const helper = endpoint => endpoint\nexport function route() { const url = new URL(endpoint); url.searchParams.set("id", sku); return url.href; }',

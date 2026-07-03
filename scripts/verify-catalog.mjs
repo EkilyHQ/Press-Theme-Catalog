@@ -1337,6 +1337,20 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
     }
     return false;
   };
+  const callIsShadowedInNestedScope = (name, scope, scopedCallIndex) => {
+    const globalCallIndex = scope.start + scopedCallIndex;
+    const rootName = String(name || '').split(/\s*\.\s*/u).filter(Boolean)[0] || '';
+    if (!rootName) return false;
+    const scopeDepth = braceDepthAt(text, scope.start);
+    const before = text.slice(scope.start, globalCallIndex);
+    const shadowRe = new RegExp(`\\b(?:const|let|var|function)\\s+${escapeRe(rootName)}\\b`, 'gu');
+    let shadow = shadowRe.exec(before);
+    while (shadow) {
+      if (braceDepthAt(text, scope.start + shadow.index) > scopeDepth) return true;
+      shadow = shadowRe.exec(before);
+    }
+    return false;
+  };
   const callbackCallSuffix = /^\s*(?:\)\s*\(\s*new\s+URL\s*\(|\)\s*\.\s*call\s*\(\s*[\s\S]*?,\s*new\s+URL\s*\(|\)\s*\.\s*apply\s*\(\s*[\s\S]*?,\s*\[\s*new\s+URL\s*\()/u;
   const re = new RegExp(`\\(\\s*(?:async\\s*)?\\(?\\s*(${IDENTIFIER_PATTERN.source})\\s*\\)?\\s*=>\\s*\\(([\\s\\S]*?)\\)\\s*\\)\\s*\\(\\s*new\\s+URL\\s*\\(`, 'gu');
   let match = re.exec(text);
@@ -1463,7 +1477,8 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
     match = directCallRe.exec(scopedText);
     while (match) {
       const parsed = extractCallArgs(scopedText, directCallRe.lastIndex);
-      if (!urlConstructorArgsAreExternal(parsed.args, externalAliases, staticRelativeAliases)) return true;
+      if (!urlConstructorArgsAreExternal(parsed.args, externalAliases, staticRelativeAliases)
+        && !callIsShadowedInNestedScope(name, scope, match.index)) return true;
       if (parsed.end > directCallRe.lastIndex) directCallRe.lastIndex = parsed.end;
       match = directCallRe.exec(scopedText);
     }
@@ -1476,7 +1491,7 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
       const relative = method === 'apply'
         ? applyArrayFirstArgIsRelativeNewUrl(parts[1] || '')
         : expressionIsRelativeNewUrl(parts[1] || '');
-      if (relative) return true;
+      if (relative && !callIsShadowedInNestedScope(name, scope, match.index)) return true;
       if (parsed.end > methodCallRe.lastIndex) methodCallRe.lastIndex = parsed.end;
       match = methodCallRe.exec(scopedText);
     }
