@@ -309,6 +309,16 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
   );
   await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export default (endpoint, post) => { const url = new URL(endpoint); url.searchParams.set("id", post.id); return url.href; };',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export const route = async endpoint => { const url = new URL(endpoint); url.searchParams.set("id", post.id); return url.href; };',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
     'import { endpoint } from "./config.js"; export function route({ endpoint = location.href }, post) { const url = new URL(endpoint); url.searchParams.set("id", post.id); return url.href; }',
     'modules/interactions.js',
     { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
@@ -339,6 +349,22 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
       'modules/barrel.js': 'export { key } from "./config.js";\n'
     }
   );
+  await assertV4PackagedSourceRejected(
+    'import { key } from "./barrel.js"; export function route(post) { const url = new URL(location.href); url.searchParams.set(key, post.id); return url.href; }',
+    'modules/interactions.js',
+    {
+      'modules/config.js': 'export const key = "id";\n',
+      'modules/barrel.js': 'import { key } from "./config.js"; export { key };\n'
+    }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { key } from "./barrel.js"; export function route(post) { const url = new URL(location.href); url.searchParams.set(key, post.id); return url.href; }',
+    'modules/interactions.js',
+    {
+      'modules/config.js': 'export const key = "id";\n',
+      'modules/barrel.js': 'export * from "./config.js";\n'
+    }
+  );
 });
 
 test('verifyCatalog scans v4 JSON and SVG packaged assets for public route literals', async () => {
@@ -362,15 +388,21 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
     const fixtureThemeDir = path.dirname(themePath);
     const configSource = 'export const endpoint = "https://api.example.test/product"; export const productPath = "/product"; export const externalRoot = "https://api.example.test";\n';
     const barrelSource = 'export { endpoint } from "./config.js";\n';
-    const importedSource = 'import { endpoint, productPath, externalRoot } from "./config.js"; import { endpoint as barrelEndpoint } from "./barrel.js"; export function imported() { const url = new URL(endpoint); url.searchParams.set("id", "sku-123"); const url2 = new URL(productPath, externalRoot); url2.searchParams.set("id", "sku-123"); const url3 = new URL(barrelEndpoint); url3.searchParams.set("id", "sku-123"); return [url.href, url2.href, url3.href]; }\n';
+    const localExportBarrelSource = 'import { endpoint } from "./config.js"; export { endpoint };\n';
+    const starBarrelSource = 'export * from "./config.js";\n';
+    const importedSource = 'import { endpoint, productPath, externalRoot } from "./config.js"; import { endpoint as barrelEndpoint } from "./barrel.js"; import { endpoint as localExportEndpoint } from "./local-export-barrel.js"; import { endpoint as starEndpoint } from "./star-barrel.js"; export function imported() { const url = new URL(endpoint); url.searchParams.set("id", "sku-123"); const url2 = new URL(productPath, externalRoot); url2.searchParams.set("id", "sku-123"); const url3 = new URL(barrelEndpoint); url3.searchParams.set("id", "sku-123"); const url4 = new URL(localExportEndpoint); url4.searchParams.set("id", "sku-123"); const url5 = new URL(starEndpoint); url5.searchParams.set("id", "sku-123"); return [url.href, url2.href, url3.href, url4.href, url5.href]; }\n';
     await writeFile(path.join(fixtureThemeDir, 'modules', 'config.js'), configSource);
     await writeFile(path.join(fixtureThemeDir, 'modules', 'barrel.js'), barrelSource);
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'local-export-barrel.js'), localExportBarrelSource);
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'star-barrel.js'), starBarrelSource);
     await writeFile(path.join(fixtureThemeDir, 'modules', 'imported.js'), importedSource);
     const zipPath = await createThemeZip(tempDir, 'arcus', {
       themeJson: theme,
       extraFiles: {
         'modules/config.js': configSource,
         'modules/barrel.js': barrelSource,
+        'modules/local-export-barrel.js': localExportBarrelSource,
+        'modules/star-barrel.js': starBarrelSource,
         'modules/imported.js': importedSource,
         'modules/layout.js': [
           'export function mount() {',
@@ -422,7 +454,9 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
       'modules/barrel.js',
       'modules/config.js',
       'modules/imported.js',
+      'modules/local-export-barrel.js',
       'modules/layout.js',
+      'modules/star-barrel.js',
       'theme.css',
       'theme.json'
     ];
