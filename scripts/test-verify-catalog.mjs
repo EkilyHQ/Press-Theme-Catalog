@@ -403,6 +403,12 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route() { const helper = { mutate(ctx, url) { url.searchParams.set("id", "post.md"); return url.href; } }; return helper.mutate(null, new URL(location.href)); }'
   );
   await assertV4PackagedSourceRejected(
+    'export function route(post) { const url = new URL(location.href); url.searchParams["set"]("id", post.location); return url.href; }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route() { const url = new URL(location.href); url["searchParams"]?.["append"]("tab", "posts"); return url.href; }'
+  );
+  await assertV4PackagedSourceRejected(
     'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } return mutate((new URL(location.href))); }'
   );
   await assertV4PackagedSourceRejected(
@@ -551,6 +557,8 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
           '  const splitLiteralExternal = "https://example.test/product" + "?tab=posts";',
           '  const externalUrl = new URL(externalBase);',
           '  externalUrl.searchParams.set("id", "sku-123");',
+          '  const externalBracketUrl = new URL(externalBase);',
+          '  externalBracketUrl.searchParams["set"]("id", "sku-123");',
           '  const externalUrlWithBase = new URL(externalBase, window.location.href);',
           '  externalUrlWithBase.searchParams.set("id", "sku-123");',
           '  const externalUrlFromBase = new URL("/product", externalBase);',
@@ -578,7 +586,7 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
           '  const boundSecondArgExternalUrl = boundSecondArgExternal(new URL(externalBase));',
           '  const relativeConcatUrl = new URL("?id=" + "sku-123", externalBase);',
           '  function localHelper() { const endpoint = "local"; return endpoint; }',
-          '  return { productUrl, objectUrl: "https://example.test/product?" + productParams, inlineObjectUrl: "https://example.test/product?" + new URLSearchParams({ id: "sku-123" }), inlineTemplateUrl: `https://example.test/product?${new URLSearchParams({ id: "sku-123" })}`, aliasInlineTemplateUrl: `${externalBase}?${new URLSearchParams({ id: "sku-123" })}`, stringUrl: "https://example.test/product?" + stringParams, aliasStringUrl: externalBase + "?" + stringParams, grid: "https://example.test/layout?" + layoutParams, splitInlineExternal, splitLiteralExternal, splitUrl: externalBase + "?" + "id=" + "sku-123", splitKeyUrl: externalBase + "?" + "id" + "=" + "sku-123", aliasSplitUrl: externalBase + "?" + externalRouteKey + "=" + "sku-123", aliasTemplateUrl: `${externalBase}?${externalRouteKey}=sku-123`, url: url.href, externalUrl: externalUrl.href, externalUrlWithBase: externalUrlWithBase.href, externalUrlFromBase: externalUrlFromBase.href, externalUrlFromPathAlias: externalUrlFromPathAlias.href, externalUrlFromObjectBase: externalUrlFromObjectBase.href, externalUrlWithQueryFromBase: externalUrlWithQueryFromBase.href, derivedExternalUrl: derivedExternalUrl.href, templateExternalUrl: templateExternalUrl.href, callbackExternalUrl, helperCallbackExternalUrl, objectCallbackExternalUrl, boundCallbackExternalUrl, secondArgExternalUrl, boundSecondArgExternalUrl, relativeConcatUrl: relativeConcatUrl.href };',
+          '  return { productUrl, objectUrl: "https://example.test/product?" + productParams, inlineObjectUrl: "https://example.test/product?" + new URLSearchParams({ id: "sku-123" }), inlineTemplateUrl: `https://example.test/product?${new URLSearchParams({ id: "sku-123" })}`, aliasInlineTemplateUrl: `${externalBase}?${new URLSearchParams({ id: "sku-123" })}`, stringUrl: "https://example.test/product?" + stringParams, aliasStringUrl: externalBase + "?" + stringParams, grid: "https://example.test/layout?" + layoutParams, splitInlineExternal, splitLiteralExternal, splitUrl: externalBase + "?" + "id=" + "sku-123", splitKeyUrl: externalBase + "?" + "id" + "=" + "sku-123", aliasSplitUrl: externalBase + "?" + externalRouteKey + "=" + "sku-123", aliasTemplateUrl: `${externalBase}?${externalRouteKey}=sku-123`, url: url.href, externalUrl: externalUrl.href, externalBracketUrl: externalBracketUrl.href, externalUrlWithBase: externalUrlWithBase.href, externalUrlFromBase: externalUrlFromBase.href, externalUrlFromPathAlias: externalUrlFromPathAlias.href, externalUrlFromObjectBase: externalUrlFromObjectBase.href, externalUrlWithQueryFromBase: externalUrlWithQueryFromBase.href, derivedExternalUrl: derivedExternalUrl.href, templateExternalUrl: templateExternalUrl.href, callbackExternalUrl, helperCallbackExternalUrl, objectCallbackExternalUrl, boundCallbackExternalUrl, secondArgExternalUrl, boundSecondArgExternalUrl, relativeConcatUrl: relativeConcatUrl.href };',
           '}'
         ].join('\n')
       }
