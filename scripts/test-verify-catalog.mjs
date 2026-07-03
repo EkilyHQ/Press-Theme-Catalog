@@ -288,6 +288,16 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
   for (const source of sources) {
     await assertV4PackagedSourceRejected(source);
   }
+  await assertV4PackagedSourceRejected(
+    'import { key } from "./config.js"; export function route(post) { const url = new URL(location.href); url.searchParams.set(key, post.id); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const key = "id";\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export function route(endpoint, post) { const url = new URL(endpoint); url.searchParams.set("id", post.id); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
 });
 
 test('verifyCatalog scans v4 JSON and SVG packaged assets for public route literals', async () => {
@@ -384,7 +394,7 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
   });
 });
 
-async function assertV4PackagedSourceRejected(source, file = 'modules/interactions.js') {
+async function assertV4PackagedSourceRejected(source, file = 'modules/interactions.js', extraFiles = {}) {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
     const theme = createThemeManifest({
       version: '3.4.6',
@@ -392,9 +402,16 @@ async function assertV4PackagedSourceRejected(source, file = 'modules/interactio
       pressRange: '>=3.4.130 <4.0.0'
     });
     await writeJson(themePath, theme);
+    const fixtureThemeDir = path.dirname(themePath);
+    for (const [relativePath, contents] of Object.entries({ ...extraFiles, [file]: `${source}\n` })) {
+      const fullPath = path.join(fixtureThemeDir, relativePath);
+      await mkdir(path.dirname(fullPath), { recursive: true });
+      await writeFile(fullPath, contents);
+    }
     const zipPath = await createThemeZip(tempDir, 'arcus', {
       themeJson: theme,
       extraFiles: {
+        ...extraFiles,
         [file]: `${source}\n`
       }
     });
@@ -407,11 +424,12 @@ async function assertV4PackagedSourceRejected(source, file = 'modules/interactio
     release.asset.size = bytes.length;
     release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
     release.files = [
+      ...Object.keys(extraFiles),
       file,
       'modules/layout.js',
       'theme.css',
       'theme.json'
-    ];
+    ].sort();
     await writeJson(releasePath, release);
 
     const result = await verifyCatalog({
