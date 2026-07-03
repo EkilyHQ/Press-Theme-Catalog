@@ -560,6 +560,12 @@ function collectLocalBindingNames(source) {
     }
     match = arrowRe.exec(text);
   }
+  const expressionArrowRe = /(?:^|[^\w$])(?:async\s*)?\(([^)]*)\)\s*=>\s*(?!\s*\{)([^;\n]+)/gu;
+  match = expressionArrowRe.exec(text);
+  while (match) {
+    if (routeGuardBodyLooksRelevant(match[2])) addBindingNamesFromPattern(bindings, match[1]);
+    match = expressionArrowRe.exec(text);
+  }
   const singleArrowRe = /(?:^|[^\w$])(?:async\s+)?([A-Za-z_$][\w$]*)\s*=>\s*\{/gu;
   match = singleArrowRe.exec(text);
   while (match) {
@@ -569,6 +575,12 @@ function collectLocalBindingNames(source) {
       addLocalDeclarationBindings(bindings, body, { topLevelOnly: true });
     }
     match = singleArrowRe.exec(text);
+  }
+  const singleExpressionArrowRe = /(?:^|[^\w$])(?:async\s+)?([A-Za-z_$][\w$]*)\s*=>\s*(?!\s*\{)([^;\n]+)/gu;
+  match = singleExpressionArrowRe.exec(text);
+  while (match) {
+    if (routeGuardBodyLooksRelevant(match[2])) bindings.add(match[1]);
+    match = singleExpressionArrowRe.exec(text);
   }
   const methodRe = /(?:^|[,{]\s*)(?:async\s+)?[A-Za-z_$][\w$]*\s*\(([^)]*)\)\s*\{/gu;
   match = methodRe.exec(text);
@@ -620,7 +632,7 @@ function addBindingNamesFromPattern(bindings, pattern) {
 }
 
 function routeGuardBodyLooksRelevant(body) {
-  return /\b(?:new\s+URL|URLSearchParams|searchParams|location)\b/u.test(String(body || ''));
+  return /\b(?:new\s+URL|URLSearchParams|searchParams|location)\b|[?&](?:tab|id)=/u.test(String(body || ''));
 }
 
 function braceDepthAt(source, index) {
