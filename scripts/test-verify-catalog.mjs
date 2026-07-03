@@ -107,6 +107,42 @@ test('verifyCatalog accepts v3 theme releases that require a later Press patch',
   });
 });
 
+test('verifyCatalog does not apply v4 packaged route scan to v3 ZIP assets', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({
+      version: '3.4.6',
+      contractVersion: 3,
+      pressRange: '>=3.4.127 <4.0.0'
+    });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', {
+      themeJson: theme,
+      extraFiles: {
+        'modules/layout.js': 'export function mount() { return "?tab=posts"; }\n'
+      }
+    });
+    const bytes = await readFile(zipPath);
+    release.version = '3.4.6';
+    release.contractVersion = 3;
+    release.engines.press = '>=3.4.127 <4.0.0';
+    release.asset.name = 'press-theme-arcus-v3.4.6.zip';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.130'
+    });
+
+    assert.equal(result.ok, true, result.failures.join('\n'));
+  });
+});
+
 test('verifyCatalog accepts v4 theme releases for the route-helper transition', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
     const theme = createThemeManifest({
@@ -182,17 +218,30 @@ test('verifyCatalog rejects v4 ZIP packaged source with public route literals', 
     const zipPath = await createThemeZip(tempDir, 'arcus', {
       themeJson: theme,
       extraFiles: {
+        'assets/link.html': '<a href="?id=post.md">Post</a>\n<a href=?tab=posts>Posts</a>',
+        'modules/config.js': 'const routeKey = "id"; export default routeKey;\n',
+        'modules/config-local-default.js': 'const routeKey = "id"; export { routeKey as default };\n',
         'modules/layout.js': 'export const href = "?lang=en&tab=posts";\n',
         'modules/views.js': 'export const postHref = "?id=post.md";\n',
         'modules/interactions.js': [
+          'import routeKeyDefault from "./config.js";',
+          'import routeKeyLocalDefault from "./config-local-default.js";',
           'export function route(post, tab) {',
           '  const url = new URL(location.href);',
           '  url.searchParams.set("id", "post.md");',
+          '  url.searchParams.set(routeKeyDefault, post.id);',
+          '  url.searchParams.set(routeKeyLocalDefault, post.id);',
+          '  const boundSet = url.searchParams.set.bind(url.searchParams);',
+          '  boundSet("id", post.id);',
           '  const key = "tab";',
           '  url.searchParams.set(key, tab);',
           '  const params = new URLSearchParams();',
           '  params.set("tab", "posts");',
           '  const objectParams = new URLSearchParams({ id: post.id });',
+          '  const parenthesizedObjectParams = (new URLSearchParams({ id: post.id }));',
+          '  const objectQuery = objectParams.toString();',
+          '  const queryAlias = "id=" + post.id;',
+          '  const parenthesizedQueryAlias = ("id=" + post.id);',
           '  const arrayParams = new URLSearchParams([["tab", tab]]);',
           '  const routeKey = "id";',
           '  const aliasParams = new URLSearchParams([[routeKey, post.location]]);',
@@ -224,7 +273,7 @@ test('verifyCatalog rejects v4 ZIP packaged source with public route literals', 
           '  const externalBase = "https://api.example.test";',
           '  const currentUrlWithExternalBase = new URL(location.href, externalBase);',
           '  currentUrlWithExternalBase.searchParams.set("id", post.id);',
-          '  return ["?" + params, "?" + objectParams, `?${arrayParams}`, "?" + aliasParams, "?" + splitParams, "?" + multilineParams, "?" + shorthandParams, "?" + new URLSearchParams({ id: post.id }), "?" + (new URLSearchParams({ id: post.id })), `?${new URLSearchParams({ id: post.id })}`, "?" + new URLSearchParams(`${routeKey}=${post.location}`), `?${new URLSearchParams(`${routeKey}=${post.location}`)}`, `?${routeKey}=${post.location}`, "?" + routeKey + "=" + post.location, "?" + "id=" + post.id, "?" + "id" + "=" + post.id, url.href, assignedUrl.href, multilineUrl.href, currentUrlWithExternalBase.href];',
+          '  return ["?" + params, "?" + objectParams, "?" + parenthesizedObjectParams, "?" + objectQuery, "?" + queryAlias, "?" + parenthesizedQueryAlias, `?${arrayParams}`, "?" + aliasParams, "?" + splitParams, "?" + multilineParams, "?" + shorthandParams, "?" + new URLSearchParams({ id: post.id }), "?" + (new URLSearchParams({ id: post.id })), `?${new URLSearchParams({ id: post.id })}`, "?" + new URLSearchParams(`${routeKey}=${post.location}`), `?${new URLSearchParams(`${routeKey}=${post.location}`)}`, `?${routeKey}=${post.location}`, "?" + routeKey + "=" + post.location, "?" + "id=" + post.id, "?" + "id" + "=" + post.id, url.href, assignedUrl.href, multilineUrl.href, currentUrlWithExternalBase.href];',
           '}'
         ].join('\n')
       }
@@ -513,9 +562,20 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
   );
 });
 
-test('verifyCatalog scans v4 JSON and SVG packaged assets for public route literals', async () => {
-  await assertV4PackagedSourceRejected('{"href":"?tab=posts"}', 'assets/data.json');
+test('verifyCatalog scans v4 SVG and HTML packaged route attributes', async () => {
   await assertV4PackagedSourceRejected('<svg><a href="?id=post.md"/></svg>', 'assets/icon.svg');
+  await assertV4PackagedSourceRejected('<a href=?id=post.md>Post</a>', 'assets/link.html');
+  await assertV4PackagedSourceRejected('<a href="?id&#61;post.md">Post</a>', 'assets/escaped-equals.html');
+  await assertV4PackagedSourceRejected('<a href="?foo=1&amp;id=post.md">Post</a>', 'assets/escaped-amp.html');
+  await assertV4PackagedSourceRejected('<a href="?&#105;d=post.md">Post</a>', 'assets/escaped-key.html');
+  await assertV4PackagedSourceRejected('<a href="&#00063;id&#00061;post.md">Post</a>', 'assets/padded-escaped-query.html');
+  await assertV4PackagedSourceRejected('<p>https://example.test</p><a href="?id=post.md">Post</a>', 'assets/https-before-link.html');
+});
+
+test('verifyCatalog does not scan static v4 assets as executable route code', async () => {
+  await assertV4PackagedSourceAccepted('body { background: url("/sprite.svg?id=foo"); }', 'theme.css');
+  await assertV4PackagedSourceAccepted('{"href":"?tab=posts"}', 'assets/data.json');
+  await assertV4PackagedSourceAccepted('old docs: "?id=post.md"', 'assets/notes.txt');
 });
 
 test('verifyCatalog scans oversized v4 packaged source files for public route literals', async () => {
@@ -532,11 +592,11 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
     });
     await writeJson(themePath, theme);
     const fixtureThemeDir = path.dirname(themePath);
-    const configSource = 'export const endpoint = "https://api.example.test/product"; export const productPath = "/product"; export const externalRoot = "https://api.example.test";\n';
+    const configSource = 'const defaultEndpoint = "https://api.example.test/product"; export default defaultEndpoint; export const endpoint = "https://api.example.test/product"; export const productPath = "/product"; export const externalRoot = "https://api.example.test";\n';
     const barrelSource = 'export { endpoint } from "./config.js";\n';
     const localExportBarrelSource = 'import { endpoint } from "./config.js"; export { endpoint };\n';
     const starBarrelSource = 'export * from "./config.js";\n';
-    const importedSource = 'import { endpoint, productPath, externalRoot } from "./config.js"; import { endpoint as barrelEndpoint } from "./barrel.js"; import { endpoint as localExportEndpoint } from "./local-export-barrel.js"; import { endpoint as starEndpoint } from "./star-barrel.js"; export function imported() { const url = new URL(endpoint); url.searchParams.set("id", "sku-123"); const url2 = new URL(productPath, externalRoot); url2.searchParams.set("id", "sku-123"); const url3 = new URL(barrelEndpoint); url3.searchParams.set("id", "sku-123"); const url4 = new URL(localExportEndpoint); url4.searchParams.set("id", "sku-123"); const url5 = new URL(starEndpoint); url5.searchParams.set("id", "sku-123"); return [url.href, url2.href, url3.href, url4.href, url5.href]; }\n';
+    const importedSource = 'import defaultEndpoint, { endpoint, productPath, externalRoot } from "./config.js"; import { endpoint as barrelEndpoint } from "./barrel.js"; import { endpoint as localExportEndpoint } from "./local-export-barrel.js"; import { endpoint as starEndpoint } from "./star-barrel.js"; export function imported() { const url = new URL(endpoint); url.searchParams.set("id", "sku-123"); const url2 = new URL(productPath, externalRoot); url2.searchParams.set("id", "sku-123"); const url3 = new URL(barrelEndpoint); url3.searchParams.set("id", "sku-123"); const url4 = new URL(localExportEndpoint); url4.searchParams.set("id", "sku-123"); const url5 = new URL(starEndpoint); url5.searchParams.set("id", "sku-123"); const importedTemplateUrl = `${endpoint}?id=sku-123`; const qs = "id=" + "sku-123"; const importedTemplateAliasUrl = `${endpoint}?${qs}`; const importedConcatAliasUrl = endpoint + "?" + qs; const defaultTemplateAliasUrl = `${defaultEndpoint}?${qs}`; return [url.href, url2.href, url3.href, url4.href, url5.href, importedTemplateUrl, importedTemplateAliasUrl, importedConcatAliasUrl, defaultTemplateAliasUrl]; }\n';
     await writeFile(path.join(fixtureThemeDir, 'modules', 'config.js'), configSource);
     await writeFile(path.join(fixtureThemeDir, 'modules', 'barrel.js'), barrelSource);
     await writeFile(path.join(fixtureThemeDir, 'modules', 'local-export-barrel.js'), localExportBarrelSource);
@@ -551,6 +611,7 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
         'modules/star-barrel.js': starBarrelSource,
         'modules/imported.js': importedSource,
         'modules/layout.js': [
+          '// old route literal fixture: "?id=post.md"',
           'export function mount() {',
           '  const productUrl = "https://example.test/product?id=sku-123";',
           '  const routeKey = "tab";',
@@ -582,6 +643,7 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
           '  const externalUrlFromObjectBase = new URL(productPath, externalUrlObjectBase);',
           '  externalUrlFromObjectBase.searchParams.set("id", "sku-123");',
           '  const externalUrlWithQueryFromBase = new URL("/product?id=sku-123", externalBase);',
+          '  const parenthesizedExternalUrl = new URL(("/product?id=sku-123"), externalBase);',
           '  const derivedExternalUrl = new URL(externalBase + "/details", window.location.href);',
           '  derivedExternalUrl.searchParams.set("id", "sku-123");',
           '  const templateExternalUrl = new URL(`${externalBase}/variant`, window.location.href);',
@@ -600,7 +662,7 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
           '  const boundSecondArgExternalUrl = boundSecondArgExternal(new URL(externalBase));',
           '  const relativeConcatUrl = new URL("?id=" + "sku-123", externalBase);',
           '  function localHelper() { const endpoint = "local"; return endpoint; }',
-          '  return { productUrl, objectUrl: "https://example.test/product?" + productParams, inlineObjectUrl: "https://example.test/product?" + new URLSearchParams({ id: "sku-123" }), inlineTemplateUrl: `https://example.test/product?${new URLSearchParams({ id: "sku-123" })}`, aliasInlineTemplateUrl: `${externalBase}?${new URLSearchParams({ id: "sku-123" })}`, stringUrl: "https://example.test/product?" + stringParams, aliasStringUrl: externalBase + "?" + stringParams, grid: "https://example.test/layout?" + layoutParams, splitInlineExternal, splitLiteralExternal, splitUrl: externalBase + "?" + "id=" + "sku-123", splitKeyUrl: externalBase + "?" + "id" + "=" + "sku-123", aliasSplitUrl: externalBase + "?" + externalRouteKey + "=" + "sku-123", aliasTemplateUrl: `${externalBase}?${externalRouteKey}=sku-123`, url: url.href, externalUrl: externalUrl.href, externalBracketUrl: externalBracketUrl.href, externalOptionalCallUrl: externalOptionalCallUrl.href, externalUrlWithBase: externalUrlWithBase.href, externalUrlFromBase: externalUrlFromBase.href, externalUrlFromPathAlias: externalUrlFromPathAlias.href, externalUrlFromObjectBase: externalUrlFromObjectBase.href, externalUrlWithQueryFromBase: externalUrlWithQueryFromBase.href, derivedExternalUrl: derivedExternalUrl.href, templateExternalUrl: templateExternalUrl.href, callbackExternalUrl, helperCallbackExternalUrl, objectCallbackExternalUrl, boundCallbackExternalUrl, secondArgExternalUrl, boundSecondArgExternalUrl, relativeConcatUrl: relativeConcatUrl.href };',
+          '  return { productUrl, objectUrl: "https://example.test/product?" + productParams, inlineObjectUrl: "https://example.test/product?" + new URLSearchParams({ id: "sku-123" }), inlineTemplateUrl: `https://example.test/product?${new URLSearchParams({ id: "sku-123" })}`, aliasInlineTemplateUrl: `${externalBase}?${new URLSearchParams({ id: "sku-123" })}`, stringUrl: "https://example.test/product?" + stringParams, aliasStringUrl: externalBase + "?" + stringParams, grid: "https://example.test/layout?" + layoutParams, splitInlineExternal, splitLiteralExternal, splitUrl: externalBase + "?" + "id=" + "sku-123", splitKeyUrl: externalBase + "?" + "id" + "=" + "sku-123", aliasSplitUrl: externalBase + "?" + externalRouteKey + "=" + "sku-123", aliasTemplateUrl: `${externalBase}?${externalRouteKey}=sku-123`, url: url.href, externalUrl: externalUrl.href, externalBracketUrl: externalBracketUrl.href, externalOptionalCallUrl: externalOptionalCallUrl.href, externalUrlWithBase: externalUrlWithBase.href, externalUrlFromBase: externalUrlFromBase.href, externalUrlFromPathAlias: externalUrlFromPathAlias.href, externalUrlFromObjectBase: externalUrlFromObjectBase.href, externalUrlWithQueryFromBase: externalUrlWithQueryFromBase.href, parenthesizedExternalUrl: parenthesizedExternalUrl.href, derivedExternalUrl: derivedExternalUrl.href, templateExternalUrl: templateExternalUrl.href, callbackExternalUrl, helperCallbackExternalUrl, objectCallbackExternalUrl, boundCallbackExternalUrl, secondArgExternalUrl, boundSecondArgExternalUrl, relativeConcatUrl: relativeConcatUrl.href };',
           '}'
         ].join('\n')
       }
@@ -663,6 +725,84 @@ test('verifyCatalog avoids semicolonless expression-arrow shadow false positives
   );
 });
 
+test('verifyCatalog keeps imported endpoint aliases available after nested same-name helpers', async () => {
+  await assertV4PackagedSourceAccepted(
+    'import { endpoint } from "./config.js"; function preview(endpoint) { return new URL(endpoint).href; } export function route() { const url = new URL(endpoint); url.searchParams.set("id", sku); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+});
+
+test('verifyCatalog rejects block-scoped imported endpoint shadows that build public routes', async () => {
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export function route(ok) { try { const endpoint = location.href; const url = new URL(endpoint); url.searchParams.set("id", sku); return url.href; } finally {} }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+});
+
+test('verifyCatalog rejects local endpoint aliases shadowed by route builders', async () => {
+  await assertV4PackagedSourceRejected(
+    'const endpoint = "https://api.example.test/product"; export function route(endpoint, post) { return endpoint + "?id=" + post.id; }'
+  );
+});
+
+test('verifyCatalog rejects catch-bound imported endpoint shadows that build public routes', async () => {
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export function route() { try { throw location.href; } catch (endpoint) { const url = new URL(endpoint); url.searchParams.set("id", sku); return url.href; } }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+});
+
+test('verifyCatalog rejects shadowing masked by nested external helpers', async () => {
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export function route(endpoint, post) { function helper() { const endpoint = "https://api.example.test/product"; return endpoint; } const url = new URL(endpoint); url.searchParams.set("id", post.location); return helper() || url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+});
+
+test('verifyCatalog rejects destructured external endpoint shadows', async () => {
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export function route([endpoint], post) { const url = new URL(endpoint); url.searchParams.set("id", post.location); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export function route({ endpoint: endpoint = location.href }, post) { const url = new URL(endpoint); url.searchParams.set("id", post.location); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+});
+
+test('verifyCatalog rejects loop-bound external endpoint shadows', async () => {
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export function route() { for (const endpoint of [location.href]) { const url = new URL(endpoint); url.searchParams.set("id", post.location); return url.href; } }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+});
+
+test('verifyCatalog keeps string braces from truncating shadowed body scans', async () => {
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export function route(endpoint, post) { const marker = "}"; return endpoint + "?id=" + post.id; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+});
+
+test('verifyCatalog does not treat slashes in regex literals as comments', async () => {
+  await assertV4PackagedSourceRejected(
+    'export function route() { const re = /^https?:\\/\\//; return "?id=post.md"; }'
+  );
+});
+
+test('verify catalog workflow pins the transition Press version', async () => {
+  const workflow = await readFile(new URL('../.github/workflows/verify-catalog.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /verify-catalog\.mjs[^\n]*--press-version 3\.4\.130/u);
+});
+
 async function assertV4PackagedSourceRejected(source, file = 'modules/interactions.js', extraFiles = {}) {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
     const theme = createThemeManifest({
@@ -692,13 +832,13 @@ async function assertV4PackagedSourceRejected(source, file = 'modules/interactio
     release.asset.url = pathToFileURL(zipPath).href;
     release.asset.size = bytes.length;
     release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
-    release.files = [
+    release.files = Array.from(new Set([
       ...Object.keys(extraFiles),
       file,
       'modules/layout.js',
       'theme.css',
       'theme.json'
-    ].sort();
+    ])).sort();
     await writeJson(releasePath, release);
 
     const result = await verifyCatalog({
@@ -743,13 +883,13 @@ async function assertV4PackagedSourceAccepted(source, file = 'modules/interactio
     release.asset.url = pathToFileURL(zipPath).href;
     release.asset.size = bytes.length;
     release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
-    release.files = [
+    release.files = Array.from(new Set([
       ...Object.keys(extraFiles),
       file,
       'modules/layout.js',
       'theme.css',
       'theme.json'
-    ].sort();
+    ])).sort();
     await writeJson(releasePath, release);
 
     const result = await verifyCatalog({

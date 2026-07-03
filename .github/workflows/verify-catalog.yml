@@ -26,4 +26,4 @@ jobs:
         run: node scripts/test-verify-catalog.mjs
 
       - name: Verify official catalog and theme artifacts
-        run: node scripts/verify-catalog.mjs --catalog catalog.json --remote --verify-assets
+        run: node scripts/verify-catalog.mjs --catalog catalog.json --remote --verify-assets --press-version 3.4.130
