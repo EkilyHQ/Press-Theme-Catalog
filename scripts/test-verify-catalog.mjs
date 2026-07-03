@@ -354,7 +354,22 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
   );
   await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export const route = ({ endpoint }, post) => ((url) => (url.searchParams.set("id", post.id), url.href)).call(getThis(a, b), new URL(endpoint));',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export const route = ({ endpoint }, post) => ((url) => (url.searchParams.set("id", post.id), url.href)).apply(null, [new URL(endpoint)]);',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
     'import { endpoint } from "./config.js"; export const route = ({ endpoint }, post) => { function mutate(url) { url.searchParams.set("id", post.id); return url.href; } return mutate.call(null, new URL(endpoint)); };',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export const route = ({ endpoint }, post) => { function mutate(url) { url.searchParams.set("id", post.id); return url.href; } return mutate.apply(null, [new URL(endpoint)]); };',
     'modules/interactions.js',
     { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
   );
@@ -538,6 +553,20 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
   });
 });
 
+test('verifyCatalog avoids v4 helper-mutation false positives across scopes', async () => {
+  await assertV4PackagedSourceAccepted(
+    'export function setup() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } } export function route() { function mutate(url) { return url.href; } return mutate(new URL(location.href)); }'
+  );
+});
+
+test('verifyCatalog avoids semicolonless expression-arrow shadow false positives', async () => {
+  await assertV4PackagedSourceAccepted(
+    'import { endpoint } from "./config.js"; const helper = endpoint => endpoint\nexport function route() { const url = new URL(endpoint); url.searchParams.set("id", sku); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+});
+
 async function assertV4PackagedSourceRejected(source, file = 'modules/interactions.js', extraFiles = {}) {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
     const theme = createThemeManifest({
@@ -586,6 +615,56 @@ async function assertV4PackagedSourceRejected(source, file = 'modules/interactio
 
     assert.equal(result.ok, false);
     assert.match(result.failures.join('\n'), /contract v4 ZIP packaged source must use router href helpers/u);
+  });
+}
+
+async function assertV4PackagedSourceAccepted(source, file = 'modules/interactions.js', extraFiles = {}) {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({
+      version: '3.4.6',
+      contractVersion: 4,
+      pressRange: '>=3.4.130 <4.0.0'
+    });
+    await writeJson(themePath, theme);
+    const fixtureThemeDir = path.dirname(themePath);
+    for (const [relativePath, contents] of Object.entries({ ...extraFiles, [file]: `${source}\n` })) {
+      const fullPath = path.join(fixtureThemeDir, relativePath);
+      await mkdir(path.dirname(fullPath), { recursive: true });
+      await writeFile(fullPath, contents);
+    }
+    const zipPath = await createThemeZip(tempDir, 'arcus', {
+      themeJson: theme,
+      extraFiles: {
+        ...extraFiles,
+        [file]: `${source}\n`
+      }
+    });
+    const bytes = await readFile(zipPath);
+    release.version = '3.4.6';
+    release.contractVersion = 4;
+    release.engines.press = '>=3.4.130 <4.0.0';
+    release.asset.name = 'press-theme-arcus-v3.4.6.zip';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    release.files = [
+      ...Object.keys(extraFiles),
+      file,
+      'modules/layout.js',
+      'theme.css',
+      'theme.json'
+    ].sort();
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.130'
+    });
+
+    assert.equal(result.ok, true, result.failures.join('\n'));
   });
 }
 
