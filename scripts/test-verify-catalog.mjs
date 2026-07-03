@@ -210,6 +210,51 @@ test('verifyCatalog rejects v4 ZIP packaged source with public route literals', 
   });
 });
 
+test('verifyCatalog allows v4 ZIP packaged source with external query strings', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({
+      version: '3.4.6',
+      contractVersion: 4,
+      pressRange: '>=3.4.130 <4.0.0'
+    });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', {
+      themeJson: theme,
+      extraFiles: {
+        'modules/layout.js': [
+          'export function mount() {',
+          '  const productUrl = "https://example.test/product?id=sku-123";',
+          '  const routeKey = "tab";',
+          '  const url = new URL("https://analytics.example.test/collect");',
+          '  url.searchParams.set(routeKey, "posts");',
+          '  url.searchParams.set("utm_source", "press-theme");',
+          '  return { productUrl, url: url.href };',
+          '}'
+        ].join('\n')
+      }
+    });
+    const bytes = await readFile(zipPath);
+    release.version = '3.4.6';
+    release.contractVersion = 4;
+    release.engines.press = '>=3.4.130 <4.0.0';
+    release.asset.name = 'press-theme-arcus-v3.4.6.zip';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.130'
+    });
+
+    assert.equal(result.ok, true);
+  });
+});
+
 test('verifyCatalog rejects v3 range clauses that allow pre-transition Press versions', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
     const pressRange = '>=3.4.0 <3.4.1 || >=3.4.127 <4.0.0';

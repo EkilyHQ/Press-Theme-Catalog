@@ -13,11 +13,10 @@ const DEFAULT_OWNER = 'EkilyHQ';
 const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set([3, 4]);
 const THEME_CONTRACT_V3_MIN_PRESS_VERSION = '3.4.127';
 const THEME_CONTRACT_V4_MIN_PRESS_VERSION = '3.4.130';
-const V4_PUBLIC_ROUTE_CONSTRUCTION_PATTERNS = [
-  /[?&](?:tab|id)=/u,
-  /\bnew\s+URLSearchParams\s*\(\s*['"`][^'"`]*(?:[?&]?(?:tab|id)=)/u,
-  /\bsearchParams\s*\.\s*(?:set|append)\(\s*(?!['"`]lang['"`])/u
-];
+const STRING_LITERAL_PATTERN = /(['"`])((?:\\[\s\S]|(?!\1)[\s\S])*?)\1/gu;
+const ROUTE_QUERY_PATTERN = /[?&](?:tab|id)\s*=/gu;
+const URL_SEARCH_PARAMS_LITERAL_PATTERN = /\bnew\s+URLSearchParams\s*\(\s*(['"`])((?:\\[\s\S]|(?!\1)[\s\S])*?)\1\s*\)/gu;
+const STATIC_ROUTE_SEARCH_PARAM_PATTERN = /\bsearchParams\s*\.\s*(?:set|append)\(\s*(['"`])(?:tab|id)\1\s*,/u;
 
 export async function verifyCatalog(options = {}) {
   const catalogPath = options.catalogPath || path.resolve('catalog.json');
@@ -344,7 +343,7 @@ async function inspectZip(bytes, expectedRoot) {
       if (!shouldScanForPublicRouteLiterals(file)) continue;
       try {
         const contents = runUnzip(['-p', zipPath, `${expectedRoot}/${file}`]);
-        if (V4_PUBLIC_ROUTE_CONSTRUCTION_PATTERNS.some((pattern) => pattern.test(contents))) routeLiteralFiles.push(file);
+        if (containsForbiddenV4RouteConstruction(contents)) routeLiteralFiles.push(file);
       } catch {
         // Other ZIP structure checks report unreadable files.
       }
@@ -364,6 +363,66 @@ function shouldScanForPublicRouteLiterals(file) {
   const normalized = stringValue(file).toLowerCase();
   if (!normalized || normalized === 'theme.json') return false;
   return /\.(?:js|mjs|cjs|css|html?|md|txt)$/u.test(normalized);
+}
+
+function isExternalUrlPrefix(value) {
+  const prefix = stringValue(value);
+  return /^[a-z][a-z0-9+.-]*:/i.test(prefix) || prefix.startsWith('//');
+}
+
+function routeCandidatePrefix(content, queryIndex) {
+  const before = String(content || '').slice(0, queryIndex);
+  const boundaries = ['"', "'", '`', ' ', '\n', '\r', '\t', '(', '[', '{', '=', '>'];
+  let boundary = -1;
+  boundaries.forEach((candidate) => {
+    const index = before.lastIndexOf(candidate);
+    if (index > boundary) boundary = index;
+  });
+  return before.slice(boundary + 1).trim();
+}
+
+function containsRelativePressRouteLiteral(content) {
+  const value = String(content || '');
+  ROUTE_QUERY_PATTERN.lastIndex = 0;
+  let match = ROUTE_QUERY_PATTERN.exec(value);
+  while (match) {
+    const queryIndex = match[0].startsWith('?')
+      ? match.index
+      : value.lastIndexOf('?', match.index);
+    const prefix = queryIndex >= 0 ? routeCandidatePrefix(value, queryIndex) : '';
+    if (!isExternalUrlPrefix(prefix)) return true;
+    match = ROUTE_QUERY_PATTERN.exec(value);
+  }
+  return false;
+}
+
+function containsForbiddenRouteLiteral(source) {
+  const text = String(source || '');
+  STRING_LITERAL_PATTERN.lastIndex = 0;
+  let match = STRING_LITERAL_PATTERN.exec(text);
+  while (match) {
+    if (containsRelativePressRouteLiteral(match[2])) return true;
+    match = STRING_LITERAL_PATTERN.exec(text);
+  }
+  return false;
+}
+
+function containsForbiddenUrlSearchParamsLiteral(source) {
+  const text = String(source || '');
+  URL_SEARCH_PARAMS_LITERAL_PATTERN.lastIndex = 0;
+  let match = URL_SEARCH_PARAMS_LITERAL_PATTERN.exec(text);
+  while (match) {
+    if (/(?:^|[?&])(?:tab|id)\s*=/iu.test(match[2])) return true;
+    match = URL_SEARCH_PARAMS_LITERAL_PATTERN.exec(text);
+  }
+  return false;
+}
+
+function containsForbiddenV4RouteConstruction(source) {
+  const text = String(source || '');
+  return containsForbiddenRouteLiteral(text)
+    || containsForbiddenUrlSearchParamsLiteral(text)
+    || STATIC_ROUTE_SEARCH_PARAM_PATTERN.test(text);
 }
 
 function runUnzip(args) {
