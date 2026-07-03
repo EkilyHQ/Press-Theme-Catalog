@@ -397,7 +397,22 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route(a, b) { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } if (a) { function mutate(url) { return url.href; } } if (b) { return mutate(new URL(location.href)); } return null; }'
   );
   await assertV4PackagedSourceRejected(
+    'export function route(post) { function mutate(url) { url.searchParams.set("id", post.location); return url.href; } return mutate(new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceRejected(
     'export function route() { const helper = { mutate(ctx, url) { url.searchParams.set("id", "post.md"); return url.href; } }; return helper.mutate(null, new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } return mutate((new URL(location.href))); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } return mutate.call(null, (new URL(location.href))); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } return mutate.apply(null, [(new URL(location.href))]); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route() { return ((url) => (url.searchParams.set("id", "post.md"), url.href))((new URL(location.href))); }'
   );
   await assertV4PackagedSourceRejected(
     'export function route() { return ((ctx, url) => (url.searchParams.set("id", "post.md"), url.href)).call(null, "ctx", new URL(location.href)); }'
