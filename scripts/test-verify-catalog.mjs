@@ -339,6 +339,26 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
   );
   await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export const route = ({ endpoint }, post) => { const mutate = (url) => { url.searchParams.set("id", post.id); return url.href; }; return mutate(new URL(endpoint)); };',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export const route = ({ endpoint }, post) => { const mutate = (url) => (url.searchParams.set("id", post.id), url.href); return mutate(new URL(endpoint)); };',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export const route = ({ endpoint }, post) => ((url) => (url.searchParams.set("id", post.id), url.href)).call(null, new URL(endpoint));',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export const route = ({ endpoint }, post) => { function mutate(url) { url.searchParams.set("id", post.id); return url.href; } return mutate.call(null, new URL(endpoint)); };',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
     [
       'import { endpoint } from "./config.js";',
       'export const route = ({ endpoint }, post) => (',
@@ -477,9 +497,11 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
           '  const templateExternalUrl = new URL(`${externalBase}/variant`, window.location.href);',
           '  templateExternalUrl.searchParams.set("id", "sku-123");',
           '  const callbackExternalUrl = ((callbackUrl) => (callbackUrl.searchParams.set("id", "sku-123"), callbackUrl.href))(new URL(externalBase));',
+          '  const mutateExternal = (callbackUrl) => { callbackUrl.searchParams.set("id", "sku-123"); return callbackUrl.href; };',
+          '  const helperCallbackExternalUrl = mutateExternal(new URL(externalBase));',
           '  const relativeConcatUrl = new URL("?id=" + "sku-123", externalBase);',
           '  function helper() { const endpoint = "local"; return endpoint; }',
-          '  return { productUrl, objectUrl: "https://example.test/product?" + productParams, inlineObjectUrl: "https://example.test/product?" + new URLSearchParams({ id: "sku-123" }), inlineTemplateUrl: `https://example.test/product?${new URLSearchParams({ id: "sku-123" })}`, aliasInlineTemplateUrl: `${externalBase}?${new URLSearchParams({ id: "sku-123" })}`, stringUrl: "https://example.test/product?" + stringParams, aliasStringUrl: externalBase + "?" + stringParams, grid: "https://example.test/layout?" + layoutParams, splitInlineExternal, splitLiteralExternal, splitUrl: externalBase + "?" + "id=" + "sku-123", splitKeyUrl: externalBase + "?" + "id" + "=" + "sku-123", aliasSplitUrl: externalBase + "?" + externalRouteKey + "=" + "sku-123", aliasTemplateUrl: `${externalBase}?${externalRouteKey}=sku-123`, url: url.href, externalUrl: externalUrl.href, externalUrlWithBase: externalUrlWithBase.href, externalUrlFromBase: externalUrlFromBase.href, externalUrlFromPathAlias: externalUrlFromPathAlias.href, externalUrlFromObjectBase: externalUrlFromObjectBase.href, externalUrlWithQueryFromBase: externalUrlWithQueryFromBase.href, derivedExternalUrl: derivedExternalUrl.href, templateExternalUrl: templateExternalUrl.href, callbackExternalUrl, relativeConcatUrl: relativeConcatUrl.href };',
+          '  return { productUrl, objectUrl: "https://example.test/product?" + productParams, inlineObjectUrl: "https://example.test/product?" + new URLSearchParams({ id: "sku-123" }), inlineTemplateUrl: `https://example.test/product?${new URLSearchParams({ id: "sku-123" })}`, aliasInlineTemplateUrl: `${externalBase}?${new URLSearchParams({ id: "sku-123" })}`, stringUrl: "https://example.test/product?" + stringParams, aliasStringUrl: externalBase + "?" + stringParams, grid: "https://example.test/layout?" + layoutParams, splitInlineExternal, splitLiteralExternal, splitUrl: externalBase + "?" + "id=" + "sku-123", splitKeyUrl: externalBase + "?" + "id" + "=" + "sku-123", aliasSplitUrl: externalBase + "?" + externalRouteKey + "=" + "sku-123", aliasTemplateUrl: `${externalBase}?${externalRouteKey}=sku-123`, url: url.href, externalUrl: externalUrl.href, externalUrlWithBase: externalUrlWithBase.href, externalUrlFromBase: externalUrlFromBase.href, externalUrlFromPathAlias: externalUrlFromPathAlias.href, externalUrlFromObjectBase: externalUrlFromObjectBase.href, externalUrlWithQueryFromBase: externalUrlWithQueryFromBase.href, derivedExternalUrl: derivedExternalUrl.href, templateExternalUrl: templateExternalUrl.href, callbackExternalUrl, helperCallbackExternalUrl, relativeConcatUrl: relativeConcatUrl.href };',
           '}'
         ].join('\n')
       }
