@@ -415,6 +415,12 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route() { return ((url) => (url.searchParams.set("id", "post.md"), url.href))((new URL(location.href))); }'
   );
   await assertV4PackagedSourceRejected(
+    'export function route() { return ((ctx, url) => { url.searchParams.set("id", "post.md"); return url.href; })("ctx", new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route() { return (function(ctx, url) { url.searchParams.set("id", "post.md"); return url.href; }).call(null, "ctx", new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceRejected(
     'export function route() { return ((ctx, url) => (url.searchParams.set("id", "post.md"), url.href)).call(null, "ctx", new URL(location.href)); }'
   );
   await assertV4PackagedSourceRejected(
