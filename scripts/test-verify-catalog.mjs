@@ -233,8 +233,15 @@ test('verifyCatalog rejects v4 ZIP packaged source with public route literals', 
           '  url.searchParams.set(routeKeyLocalDefault, post.id);',
           '  const boundSet = url.searchParams.set.bind(url.searchParams);',
           '  boundSet("id", post.id);',
+          '  const boundDelete = url.searchParams.delete.bind(url.searchParams);',
+          '  boundDelete("id");',
           '  const key = "tab";',
           '  url.searchParams.set(key, tab);',
+          '  const unused = 1, multiDeclaratorKey = "id";',
+          '  url.searchParams.set(multiDeclaratorKey, post.id);',
+          '  const routeKeys = { post: "id" };',
+          '  url.searchParams.set(routeKeys.post, post.id);',
+          '  url.searchParams.delete("tab");',
           '  const params = new URLSearchParams();',
           '  params.set("tab", "posts");',
           '  const objectParams = new URLSearchParams({ id: post.id });',
@@ -272,7 +279,17 @@ test('verifyCatalog rejects v4 ZIP packaged source with public route literals', 
           '  assignedUrl = new URL(location.href);',
           '  assignedUrl.searchParams.set("id", post.id);',
           '  assignedUrl.search = routeKey + "=" + post.id;',
+          '  assignedUrl.search = routeKey +',
+          '    "=" + post.id;',
           '  assignedUrl.search = new URLSearchParams({ id: post.id });',
+          '  state.routeUrl = new URL(location.href);',
+          '  state.routeUrl.searchParams.set("id", post.id);',
+          '  function currentUrl() { return new URL(location.href); }',
+          '  const factoryUrl = currentUrl();',
+          '  factoryUrl.searchParams.set("id", post.id);',
+          '  const WindowParams = window.URLSearchParams;',
+          '  const aliasedWindowParams = new WindowParams({ id: post.id });',
+          '  const conditionalParams = enabled ? new URLSearchParams({ id: post.id }) : new URLSearchParams();',
           '  const multilineUrl = new URL(',
           '    location.href',
           '  );',
@@ -280,7 +297,7 @@ test('verifyCatalog rejects v4 ZIP packaged source with public route literals', 
           '  const externalBase = "https://api.example.test";',
           '  const currentUrlWithExternalBase = new URL(location.href, externalBase);',
           '  currentUrlWithExternalBase.searchParams.set("id", post.id);',
-          '  return ["?" + params, "?" + objectParams, "?" + entriesParams, "?" + mapParams, "?" + String(objectParams), "?" + parenthesizedObjectParams, "?" + objectQuery, "?" + queryAlias, "?" + parenthesizedQueryAlias, `?${arrayParams}`, "?" + aliasParams, "?" + splitParams, "?" + multilineParams, "?" + shorthandParams, "?" + new URLSearchParams({ id: post.id }), "?" + (new URLSearchParams({ id: post.id })), `?${new URLSearchParams({ id: post.id })}`, "?" + new URLSearchParams(`${routeKey}=${post.location}`), `?${new URLSearchParams(`${routeKey}=${post.location}`)}`, `?${routeKey}=${post.location}`, "?" + routeKey + "=" + post.location, "?" + "id=" + post.id, "?" + "id" + "=" + post.id, url.href, assignedUrl.href, multilineUrl.href, currentUrlWithExternalBase.href];',
+          '  return ["?" + params, "?" + objectParams, "?" + entriesParams, "?" + mapParams, "?" + String(objectParams), "?" + parenthesizedObjectParams, "?" + objectQuery, "?" + queryAlias, "?" + parenthesizedQueryAlias, `?${arrayParams}`, "?" + aliasParams, "?" + splitParams, "?" + multilineParams, "?" + shorthandParams, "?" + new URLSearchParams({ id: post.id }), "?" + (new URLSearchParams({ id: post.id })), `?${new URLSearchParams({ id: post.id })}`, "?" + new URLSearchParams(`${routeKey}=${post.location}`), `?${new URLSearchParams(`${routeKey}=${post.location}`)}`, "?" + aliasedWindowParams, "?" + conditionalParams, `?${routeKey}=${post.location}`, "?" + routeKey + "=" + post.location, "?" + "id=" + post.id, "?" + "id" + "=" + post.id, url.href, assignedUrl.href, state.routeUrl.href, factoryUrl.href, multilineUrl.href, currentUrlWithExternalBase.href];',
           '}'
         ].join('\n')
       }
@@ -324,8 +341,19 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route() { const key = "id"; const url = new URL(location.href); url.searchParams.set((key), "post.md"); return url.href; }',
     'export function route() { const url = new URL(location.href); url.searchParams.set(("id"), "post.md"); return url.href; }',
     'export function route() { const url = new URL(location.href); url.searchParams.set((("id")), "post.md"); return url.href; }',
+    'export function route(post) { const unused = 1, key = "id"; const url = new URL(location.href); url.searchParams.set(key, post.id); return url.href; }',
+    'export function route(post) { const routeKeys = { post: "id" }; const url = new URL(location.href); url.searchParams.set(routeKeys.post, post.id); return url.href; }',
+    'export function route(post) { const routeKeys = { post: "id" }; const url = new URL(location.href); url.searchParams.set(routeKeys["post"], post.id); return url.href; }',
+    'export function route(post) { const routeKeys = { post: "id" }; const url = new URL(location.href); url.searchParams.set(routeKeys?.["post"], post.id); return url.href; }',
     'export function route(post) { let params; params = new URLSearchParams({ id: post.id }); return "?" + params; }',
+    'export function route(post) { const Params = URLSearchParams; const params = new Params({ id: post.id }); return "?" + params; }',
+    'export function route(post) { const WindowParams = window.URLSearchParams; const params = new WindowParams({ id: post.id }); return "?" + params; }',
+    'export function route(post) { const Params = globalThis.URLSearchParams; const params = new Params({ id: post.id }); return "?" + params; }',
+    'export function route(post) { const { URLSearchParams: Params } = window; const params = new Params({ id: post.id }); return "?" + params; }',
+    'export function route(post) { const params = enabled ? new URLSearchParams({ id: post.id }) : new URLSearchParams(); return "?" + params; }',
     'export function route(post) { const url = new URL(location.href); const params = url.searchParams; params.set("id", post.id); return url.href; }',
+    'export function route(post) { const url = new URL(location.href); url.searchParams.delete("id"); return url.href; }',
+    'export function route(post) { const url = new URL(location.href); const remove = url.searchParams.delete.bind(url.searchParams); remove("id"); return url.href; }',
     'export function route(post) { const key = "tab"; const url = new URL(location.href); let params; params = url.searchParams; params.append(key, "posts"); return url.href; }',
     'export function route(post) { const url = new URL(location.href); const params = (url.searchParams); params.set("id", post.id); return url.href; }',
     'export function route(post) { const url = new URL(location.href); const { searchParams } = url; searchParams.set("id", post.id); return url.href; }',
@@ -344,8 +372,13 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route(post) { const loc = location; const key = "id"; loc["search"] = key + "=" + post.id; }',
     'export function route(post) { const { location: loc } = window; const key = "id"; const qs = key + "=" + post.id; loc.search = qs; }',
     'export function route(post) { const loc = window.location; const params = new URLSearchParams({ id: post.id }); loc.search = params; }',
+    'export function route(post) { const qs = enabled ? "id=" + post.id : ""; location.search = qs; }',
     'export function route(post) { const key = "id"; const url = new URL(location.href); url.search = key + "=" + post.id; return url.href; }',
+    'export function route(post) { const key = "id"; const url = new URL(location.href); url.search = key +\n  "=" + post.id; return url.href; }',
     'export function route(post) { const url = new URL(location.href); url.search = new URLSearchParams({ id: post.id }); return url.href; }',
+    'export function route(post) { state.url = new URL(location.href); state.url.searchParams.set("id", post.id); return state.url.href; }',
+    'export function route(post) { function currentUrl() { return new URL(location.href); } const url = currentUrl(); url.searchParams.set("id", post.id); return url.href; }',
+    'export function route(post) { const currentUrl = function() { return new URL(location.href); }; const url = currentUrl(); url.searchParams.set("id", post.id); return url.href; }',
     'export function route(post) { state.params = new URLSearchParams({ id: post.id }); return "?" + state.params; }'
   ];
   for (const source of sources) {
@@ -587,11 +620,14 @@ test('verifyCatalog scans v4 SVG and HTML packaged route attributes', async () =
   await assertV4PackagedSourceRejected('<a href="?&#105;d=post.md">Post</a>', 'assets/escaped-key.html');
   await assertV4PackagedSourceRejected('<a href="&#00063;id&#00061;post.md">Post</a>', 'assets/padded-escaped-query.html');
   await assertV4PackagedSourceRejected('<p>https://example.test</p><a href="?id=post.md">Post</a>', 'assets/https-before-link.html');
+  await assertV4PackagedSourceRejected('<img srcset="?id=post.md 1x, ?tab=posts 2x">', 'assets/srcset.html');
+  await assertV4PackagedSourceRejected('<script>location.search = "id=" + post.location;</script>', 'assets/inline-script.html');
 });
 
 test('verifyCatalog does not scan static v4 assets as executable route code', async () => {
   await assertV4PackagedSourceAccepted('body { background: url("/sprite.svg?id=foo"); }', 'theme.css');
   await assertV4PackagedSourceAccepted('{"href":"?tab=posts"}', 'assets/data.json');
+  await assertV4PackagedSourceAccepted('<script type="application/json">{"href":"?id=post.md"}</script>', 'assets/data.html');
   await assertV4PackagedSourceAccepted('old docs: "?id=post.md"', 'assets/notes.txt');
 });
 
