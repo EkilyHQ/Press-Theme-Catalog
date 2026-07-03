@@ -397,6 +397,15 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route(a, b) { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } if (a) { function mutate(url) { return url.href; } } if (b) { return mutate(new URL(location.href)); } return null; }'
   );
   await assertV4PackagedSourceRejected(
+    'export function route() { const helper = { mutate(ctx, url) { url.searchParams.set("id", "post.md"); return url.href; } }; return helper.mutate(null, new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route() { return ((ctx, url) => (url.searchParams.set("id", "post.md"), url.href)).call(null, "ctx", new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route() { return ((ctx, url) => (url.searchParams.set("id", "post.md"), url.href)).apply(null, ["ctx", new URL(location.href)]); }'
+  );
+  await assertV4PackagedSourceRejected(
     [
       'import { endpoint } from "./config.js";',
       'export const route = ({ endpoint }, post) => (',
@@ -594,6 +603,12 @@ test('verifyCatalog avoids v4 helper-mutation false positives across scopes', as
 test('verifyCatalog avoids v4 helper-mutation false positives across nested shadows', async () => {
   await assertV4PackagedSourceAccepted(
     'export function route(ok) { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } const helper = { mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } }; if (ok) { function mutate(url) { return url.href; } const helper = { mutate(url) { return url.href; } }; return { direct: mutate(new URL(location.href)), member: helper.mutate(new URL(location.href)) }; } return null; }'
+  );
+});
+
+test('verifyCatalog avoids v4 simple helper false positives on object methods', async () => {
+  await assertV4PackagedSourceAccepted(
+    'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } const helper = { mutate(url) { return url.href; } }; return helper.mutate(new URL(location.href)); }'
   );
 });
 
