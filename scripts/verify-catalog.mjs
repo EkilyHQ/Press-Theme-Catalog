@@ -14,7 +14,7 @@ const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set([3, 4]);
 const THEME_CONTRACT_V3_MIN_PRESS_VERSION = '3.4.127';
 const THEME_CONTRACT_V4_MIN_PRESS_VERSION = '3.4.130';
 const STRING_LITERAL_PATTERN = /(['"`])((?:\\[\s\S]|(?!\1)[\s\S])*?)\1/gu;
-const ROUTE_QUERY_PATTERN = /[?&](?:tab|id)\s*=/gu;
+const ROUTE_QUERY_PATTERN = /[?&]([^=&#\s]+)\s*=/gu;
 const ROUTE_KEY_OBJECT_INIT_PATTERN = /(?:^|[,{]\s*)(?:(['"`])(?:tab|id)\1|(?:tab|id))\s*:/u;
 const ROUTE_KEY_OBJECT_SHORTHAND_PATTERN = /(?:^|[,{]\s*)(?:tab|id)\s*(?=[,}])/u;
 const ROUTE_KEY_ARRAY_INIT_PATTERN = /\[\s*(['"`])(?:tab|id)\1\s*,/u;
@@ -388,6 +388,19 @@ function isExternalUrlPrefix(value) {
   return /^[a-z][a-z0-9+.-]*:/i.test(prefix) || prefix.startsWith('//');
 }
 
+function decodeUrlQueryKey(value) {
+  const text = stringValue(value).trim();
+  try {
+    return decodeURIComponent(text);
+  } catch (_) {
+    return text;
+  }
+}
+
+function routeQueryKeyIsForbidden(value) {
+  return /^(?:tab|id)$/u.test(decodeUrlQueryKey(value));
+}
+
 function routeCandidatePrefix(content, queryIndex) {
   const before = String(content || '').slice(0, queryIndex);
   const boundaries = ['"', "'", '`', ' ', '\n', '\r', '\t', '(', '[', '{', '=', '>'];
@@ -559,6 +572,10 @@ function containsRelativePressRouteLiteral(content) {
   ROUTE_QUERY_PATTERN.lastIndex = 0;
   let match = ROUTE_QUERY_PATTERN.exec(value);
   while (match) {
+    if (!routeQueryKeyIsForbidden(match[1])) {
+      match = ROUTE_QUERY_PATTERN.exec(value);
+      continue;
+    }
     const queryIndex = match[0].startsWith('?')
       ? match.index
       : value.lastIndexOf('?', match.index);
@@ -572,7 +589,8 @@ function containsRelativePressRouteLiteral(content) {
 function stringLiteralIsExternalUrlConstructorArg(source, literalMatch, externalAliases = new Set()) {
   const text = String(source || '');
   const before = text.slice(0, literalMatch.index);
-  const callMatch = before.match(new RegExp(`\\bnew\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(\\s*(?:\\(\\s*)*$`, 'u'));
+  const constructorPattern = urlConstructorPattern(collectUrlConstructorAliases(text));
+  const callMatch = before.match(new RegExp(`\\bnew\\s+(?:${constructorPattern})\\s*\\(\\s*(?:\\(\\s*)*$`, 'u'));
   if (!callMatch) return false;
   const callPrefixIndex = before.length - callMatch[0].length;
   const argsStart = callPrefixIndex + callMatch[0].indexOf('(') + 1;
@@ -723,6 +741,13 @@ function addExternalUrlObjectAliases(aliases, name, initializer) {
   });
 }
 
+function bindingIsReassigned(source, name, fromIndex = 0) {
+  const text = String(source || '');
+  const re = new RegExp(`(?:^|[^\\w$.])${escapeRe(name)}\\s*(?:[+\\-*/%&|^]?=)(?!=|>)`, 'gu');
+  re.lastIndex = Math.max(0, fromIndex);
+  return re.test(text);
+}
+
 function collectRouteKeyAliases(source) {
   const text = String(source || '');
   const aliases = new Set();
@@ -778,10 +803,12 @@ function collectRouteKeyAliases(source) {
 function collectExternalUrlAliases(source) {
   const text = String(source || '');
   const aliases = new Set();
-  const re = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(['"`])((?:\\[\s\S]|(?!\2)[\s\S])*?)\2\s*;?/gu;
+  const re = /\b(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(['"`])((?:\\[\s\S]|(?!\3)[\s\S])*?)\3\s*;?/gu;
   let match = re.exec(text);
   while (match) {
-    if (isExternalUrlPrefix(match[3])) aliases.add(match[1]);
+    if (isExternalUrlPrefix(match[4]) && (match[1] === 'const' || !bindingIsReassigned(text, match[2], re.lastIndex))) {
+      aliases.add(match[2]);
+    }
     match = re.exec(text);
   }
   const staticRelativeAliases = collectStaticRelativeUrlAliases(text);
@@ -794,11 +821,15 @@ function collectExternalUrlAliases(source) {
     });
     match = declarationRe.exec(text);
   }
-  const urlRe = new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu');
+  const constructorPattern = urlConstructorPattern(collectUrlConstructorAliases(text));
+  const urlRe = new RegExp(`\\b(const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+(?:${constructorPattern})\\s*\\(`, 'gu');
   match = urlRe.exec(text);
   while (match) {
     const parsed = extractCallArgs(text, urlRe.lastIndex);
-    if (urlConstructorArgsAreExternal(parsed.args, aliases, staticRelativeAliases)) aliases.add(match[1]);
+    if (urlConstructorArgsAreExternal(parsed.args, aliases, staticRelativeAliases)
+      && (match[1] === 'const' || !bindingIsReassigned(text, match[2], parsed.end))) {
+      aliases.add(match[2]);
+    }
     if (parsed.end > urlRe.lastIndex) urlRe.lastIndex = parsed.end;
     match = urlRe.exec(text);
   }
@@ -1025,7 +1056,7 @@ function addBindingNamesFromPattern(bindings, pattern) {
 }
 
 function routeGuardBodyLooksRelevant(body) {
-  return /\b(?:new\s+URL|URLSearchParams|searchParams|location)\b|[?&](?:tab|id)=/u.test(String(body || ''));
+  return /\b(?:new\s+URL|URLSearchParams|searchParams|location)\b|[?&][^=&#\s]+\s*=/u.test(String(body || ''));
 }
 
 function braceDepthAt(source, index) {
@@ -1343,7 +1374,7 @@ function routeKeyDispatchPattern(owner, property = '') {
   const target = `${ownerPattern}${suffix}`;
   const mutator = `(?:${propertyAccessorPattern('set')}|${propertyAccessorPattern('append')}|${propertyAccessorPattern('delete')})`;
   const parenthesizedRouteKey = `(?:\\(\\s*)*(?:${IDENTIFIER_PATTERN.source}|${ROUTE_KEY_LITERAL_EXPRESSION_PATTERN_SOURCE})(?:\\s*\\))*`;
-  return new RegExp(`${target}${mutator}\\s*\\.\\s*(?:call|apply)\\s*\\(\\s*${target}\\s*,\\s*(?:\\[\\s*)?(${parenthesizedRouteKey}|[^,\\]\\)]+)`, 'gu');
+  return new RegExp(`${target}${mutator}\\s*(?:\\?\\.\\s*|\\.\\s*)(?:call|apply)\\s*\\(\\s*${target}\\s*,\\s*(?:\\[\\s*)?(${parenthesizedRouteKey}|[^,\\]\\)]+)`, 'gu');
 }
 
 function collectBoundRouteMutators(source, owner, property = '') {
@@ -1452,6 +1483,38 @@ function urlSearchParamsConstructorPattern(aliases = new Set()) {
   return aliasPattern
     ? `(?:(?:window|globalThis)\\s*\\.\\s*)?URLSearchParams|${aliasPattern}`
     : `(?:(?:window|globalThis)\\s*\\.\\s*)?URLSearchParams`;
+}
+
+function collectUrlConstructorAliases(source) {
+  const text = String(source || '');
+  const aliases = new Set();
+  const re = new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:(?:window|globalThis)\\s*\\.\\s*)?URL\\b`, 'gu');
+  let match = re.exec(text);
+  while (match) {
+    aliases.add(match[1]);
+    match = re.exec(text);
+  }
+  const destructureRe = /\b(?:const|let|var)\s*\{([\s\S]*?)\}\s*=\s*(?:window|globalThis)\b/gu;
+  let destructure = destructureRe.exec(text);
+  while (destructure) {
+    const body = destructure[1] || '';
+    const aliasRe = /(?:^|,)\s*URL\s*:\s*([A-Za-z_$][\w$]*)/gu;
+    let alias = aliasRe.exec(body);
+    while (alias) {
+      aliases.add(alias[1]);
+      alias = aliasRe.exec(body);
+    }
+    if (/(?:^|,)\s*URL\s*(?:,|$)/u.test(body)) aliases.add('URL');
+    destructure = destructureRe.exec(text);
+  }
+  return aliases;
+}
+
+function urlConstructorPattern(aliases = new Set()) {
+  const aliasPattern = aliasExpressionPattern(aliases);
+  return aliasPattern
+    ? `${URL_CONSTRUCTOR_PATTERN_SOURCE}|${aliasPattern}`
+    : URL_CONSTRUCTOR_PATTERN_SOURCE;
 }
 
 function extractCallArgs(source, argsStart) {
@@ -1593,7 +1656,7 @@ function routeKeyExpressionPattern(aliases = new Set()) {
 
 function urlSearchParamsInitializerHasRouteKey(args, aliases = new Set()) {
   const text = stripWrappingParentheses(args);
-  const passThroughCall = text.match(/^(?:Object\s*\.\s*entries|Array\s*\.\s*from)\s*\(/u);
+  const passThroughCall = text.match(/^(?:Object\s*\.\s*(?:entries|fromEntries)|Array\s*\.\s*from)\s*\(/u);
   if (passThroughCall) {
     const parsed = extractCallArgs(text, passThroughCall[0].length);
     return urlSearchParamsInitializerHasRouteKey(parsed.args, aliases);
@@ -1909,8 +1972,9 @@ function urlConstructorArgsAreExternal(args, aliases = new Set(), staticRelative
 function collectRouteUrlFactoryAliases(source, externalAliases = collectExternalUrlAliases(source), staticRelativeAliases = collectStaticRelativeUrlAliases(source)) {
   const text = String(source || '');
   const out = new Set();
+  const constructorPattern = urlConstructorPattern(collectUrlConstructorAliases(text));
   const bodyReturnsRouteUrl = (body) => {
-    const re = new RegExp(`\\breturn\\s+(?:\\(\\s*)*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu');
+    const re = new RegExp(`\\breturn\\s+(?:\\(\\s*)*new\\s+(?:${constructorPattern})\\s*\\(`, 'gu');
     let match = re.exec(body);
     while (match) {
       const parsed = extractCallArgs(body, re.lastIndex);
@@ -1922,7 +1986,7 @@ function collectRouteUrlFactoryAliases(source, externalAliases = collectExternal
   };
   const expressionReturnsRouteUrl = (expression) => {
     const value = stripWrappingParentheses(expression);
-    const match = value.match(new RegExp(`^new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'u'));
+    const match = value.match(new RegExp(`^new\\s+(?:${constructorPattern})\\s*\\(`, 'u'));
     if (!match) return false;
     const parsed = extractCallArgs(value, match[0].length);
     return !urlConstructorArgsAreExternal(parsed.args, externalAliases, staticRelativeAliases);
@@ -1953,6 +2017,20 @@ function collectRouteUrlFactoryAliases(source, externalAliases = collectExternal
     arrowExpressionRe.lastIndex += expression.length;
     match = arrowExpressionRe.exec(text);
   }
+  const singleArrowBlockRe = new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:async\\s+)?${IDENTIFIER_PATTERN.source}\\s*=>\\s*\\{`, 'gu');
+  match = singleArrowBlockRe.exec(text);
+  while (match) {
+    if (bodyReturnsRouteUrl(extractBlockText(text, singleArrowBlockRe.lastIndex - 1))) out.add(match[1]);
+    match = singleArrowBlockRe.exec(text);
+  }
+  const singleArrowExpressionRe = new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:async\\s+)?${IDENTIFIER_PATTERN.source}\\s*=>\\s*`, 'gu');
+  match = singleArrowExpressionRe.exec(text);
+  while (match) {
+    const expression = extractAssignmentExpression(text, singleArrowExpressionRe.lastIndex);
+    if (expressionReturnsRouteUrl(expression)) out.add(match[1]);
+    singleArrowExpressionRe.lastIndex += expression.length;
+    match = singleArrowExpressionRe.exec(text);
+  }
   return out;
 }
 
@@ -1960,10 +2038,11 @@ function collectRouteUrlVariables(source, externalAliases = collectExternalUrlAl
   const text = String(source || '');
   const out = new Set();
   const factories = collectRouteUrlFactoryAliases(text, externalAliases, staticRelativeAliases);
+  const constructorPattern = urlConstructorPattern(collectUrlConstructorAliases(text));
   [
-    new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu'),
-    new RegExp(`(?:^|[^\\w$.])(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu'),
-    new RegExp(`(?:^|[^\\w$])(${MEMBER_EXPRESSION_PATTERN_SOURCE})\\s*=\\s*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu')
+    new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+(?:${constructorPattern})\\s*\\(`, 'gu'),
+    new RegExp(`(?:^|[^\\w$.])(${IDENTIFIER_PATTERN.source})\\s*=\\s*new\\s+(?:${constructorPattern})\\s*\\(`, 'gu'),
+    new RegExp(`(?:^|[^\\w$])(${MEMBER_EXPRESSION_PATTERN_SOURCE})\\s*=\\s*new\\s+(?:${constructorPattern})\\s*\\(`, 'gu')
   ].forEach((re) => {
     let match = re.exec(text);
     while (match) {
@@ -2051,6 +2130,7 @@ function containsForbiddenRouteUrlMutation(source, aliases, externalAliases, sta
 
 function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, externalAliases, staticRelativeAliases) {
   const text = String(source || '');
+  const constructorPattern = urlConstructorPattern(collectUrlConstructorAliases(text));
   const callbackMutatesRouteUrl = (body, owner) => {
     if (containsRouteKeyWriteForOwner(body, owner, aliases, 'searchParams')) return true;
     if (containsForbiddenSearchAssignment(body, searchWritePatternForOwner(owner), aliases)) return true;
@@ -2098,7 +2178,7 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
       if (value.slice(parsed.end).trim()) break;
       value = parsed.args.trim();
     }
-    const match = value.match(new RegExp(`^new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'u'));
+    const match = value.match(new RegExp(`^new\\s+(?:${constructorPattern})\\s*\\(`, 'u'));
     if (!match) return false;
     const parsed = extractCallArgs(value, match[0].length);
     return !urlConstructorArgsAreExternal(parsed.args, externalAliases, staticRelativeAliases);
@@ -2149,7 +2229,7 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
     return false;
   };
   const callbackCallSuffix = new RegExp(`^\\s*\\)\\s*(?:(?:\\?\\.\\s*)?\\(|(?:\\?\\.\\s*)?\\.\\s*(call|apply)\\s*(?:\\?\\.\\s*)?\\(|\\?\\.\\s*\\[\\s*["'\`](call|apply)["'\`]\\s*\\]\\s*(?:\\?\\.\\s*)?\\(|\\[\\s*["'\`](call|apply)["'\`]\\s*\\]\\s*(?:\\?\\.\\s*)?\\()`, 'u');
-  const re = new RegExp(`\\(\\s*(?:async\\s*)?\\(?\\s*(${IDENTIFIER_PATTERN.source})\\s*\\)?\\s*=>\\s*\\(([\\s\\S]*?)\\)\\s*\\)\\s*\\(\\s*new\\s+URL\\s*\\(`, 'gu');
+  const re = new RegExp(`\\(\\s*(?:async\\s*)?\\(?\\s*(${IDENTIFIER_PATTERN.source})\\s*\\)?\\s*=>\\s*\\(([\\s\\S]*?)\\)\\s*\\)\\s*\\(\\s*new\\s+(?:${constructorPattern})\\s*\\(`, 'gu');
   let match = re.exec(text);
   while (match) {
     const parsed = argsAreRelative(re.lastIndex);
@@ -2159,7 +2239,7 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
     if (parsed.end > re.lastIndex) re.lastIndex = parsed.end;
     match = re.exec(text);
   }
-  const callRe = new RegExp(`\\(\\s*(?:async\\s*)?\\(?\\s*(${IDENTIFIER_PATTERN.source})\\s*\\)?\\s*=>\\s*\\(([\\s\\S]*?)\\)\\s*\\)\\s*\\.\\s*call\\s*\\(\\s*[\\s\\S]*?,\\s*new\\s+URL\\s*\\(`, 'gu');
+  const callRe = new RegExp(`\\(\\s*(?:async\\s*)?\\(?\\s*(${IDENTIFIER_PATTERN.source})\\s*\\)?\\s*=>\\s*\\(([\\s\\S]*?)\\)\\s*\\)\\s*\\.\\s*call\\s*\\(\\s*[\\s\\S]*?,\\s*new\\s+(?:${constructorPattern})\\s*\\(`, 'gu');
   match = callRe.exec(text);
   while (match) {
     const parsed = argsAreRelative(callRe.lastIndex);
@@ -2167,7 +2247,7 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
     if (parsed.end > callRe.lastIndex) callRe.lastIndex = parsed.end;
     match = callRe.exec(text);
   }
-  const applyRe = new RegExp(`\\(\\s*(?:async\\s*)?\\(?\\s*(${IDENTIFIER_PATTERN.source})\\s*\\)?\\s*=>\\s*\\(([\\s\\S]*?)\\)\\s*\\)\\s*\\.\\s*apply\\s*\\(\\s*[\\s\\S]*?,\\s*\\[\\s*new\\s+URL\\s*\\(`, 'gu');
+  const applyRe = new RegExp(`\\(\\s*(?:async\\s*)?\\(?\\s*(${IDENTIFIER_PATTERN.source})\\s*\\)?\\s*=>\\s*\\(([\\s\\S]*?)\\)\\s*\\)\\s*\\.\\s*apply\\s*\\(\\s*[\\s\\S]*?,\\s*\\[\\s*new\\s+(?:${constructorPattern})\\s*\\(`, 'gu');
   match = applyRe.exec(text);
   while (match) {
     const parsed = argsAreRelative(applyRe.lastIndex);
@@ -2297,6 +2377,31 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
       methodRe.lastIndex = Math.max(methodRe.lastIndex, methodSpan.end - objectBodyStart);
       method = methodRe.exec(objectSpan.body);
     }
+    const propertyFunctionRe = new RegExp(`(?:^|[,\\{])\\s*(${IDENTIFIER_PATTERN.source})\\s*:\\s*(?:async\\s+)?function(?:\\s+[A-Za-z_$][\\w$]*)?\\s*\\(([^)]*)\\)\\s*\\{`, 'gu');
+    let propertyFunction = propertyFunctionRe.exec(objectSpan.body);
+    while (propertyFunction) {
+      const functionOpenBrace = objectBodyStart + propertyFunctionRe.lastIndex - 1;
+      const functionSpan = extractBlockSpan(text, functionOpenBrace);
+      addMutatorsForParams(`${objectName}.${propertyFunction[1]}`, propertyFunction[2], functionSpan.body, match.index, objectScope);
+      propertyFunctionRe.lastIndex = Math.max(propertyFunctionRe.lastIndex, functionSpan.end - objectBodyStart);
+      propertyFunction = propertyFunctionRe.exec(objectSpan.body);
+    }
+    const propertyArrowRe = new RegExp(`(?:^|[,\\{])\\s*(${IDENTIFIER_PATTERN.source})\\s*:\\s*(?:async\\s*)?(?:\\(([^)]*)\\)|(${IDENTIFIER_PATTERN.source}))\\s*=>\\s*`, 'gu');
+    let propertyArrow = propertyArrowRe.exec(objectSpan.body);
+    while (propertyArrow) {
+      const params = propertyArrow[2] || propertyArrow[3] || '';
+      const valueStart = objectBodyStart + propertyArrowRe.lastIndex;
+      if (text[valueStart] === '{') {
+        const arrowSpan = extractBlockSpan(text, valueStart);
+        addMutatorsForParams(`${objectName}.${propertyArrow[1]}`, params, arrowSpan.body, match.index, objectScope);
+        propertyArrowRe.lastIndex = Math.max(propertyArrowRe.lastIndex, arrowSpan.end - objectBodyStart);
+      } else {
+        const expression = extractAssignmentExpression(text, valueStart);
+        addMutatorsForParams(`${objectName}.${propertyArrow[1]}`, params, expression, match.index, objectScope);
+        propertyArrowRe.lastIndex += expression.length;
+      }
+      propertyArrow = propertyArrowRe.exec(objectSpan.body);
+    }
     if (objectSpan.end > objectLiteralRe.lastIndex) objectLiteralRe.lastIndex = objectSpan.end;
     match = objectLiteralRe.exec(text);
   }
@@ -2382,9 +2487,10 @@ function collectInlineUrlSearchParamsAliases(source) {
   const text = String(source || '');
   const out = new Set();
   const searchParamsAccess = propertyAccessorPattern('searchParams');
+  const constructorPattern = urlConstructorPattern(collectUrlConstructorAliases(text));
   [
-    new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu'),
-    new RegExp(`(?:^|[^\\w$.])(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu')
+    new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*new\\s+(?:${constructorPattern})\\s*\\(`, 'gu'),
+    new RegExp(`(?:^|[^\\w$.])(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*new\\s+(?:${constructorPattern})\\s*\\(`, 'gu')
   ].forEach((re) => {
     let match = re.exec(text);
     while (match) {
@@ -2395,7 +2501,7 @@ function collectInlineUrlSearchParamsAliases(source) {
       match = re.exec(text);
     }
   });
-  const destructureRe = new RegExp(`\\b(?:const|let|var)\\s*\\{([\\s\\S]*?)\\}\\s*=\\s*new\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu');
+  const destructureRe = new RegExp(`\\b(?:const|let|var)\\s*\\{([\\s\\S]*?)\\}\\s*=\\s*new\\s+(?:${constructorPattern})\\s*\\(`, 'gu');
   let destructure = destructureRe.exec(text);
   while (destructure) {
     const parsed = extractCallArgs(text, destructureRe.lastIndex);
@@ -2418,7 +2524,8 @@ function containsForbiddenInlineRouteUrlSearchParamsMutation(source, aliases, ex
   const searchParamsAccess = propertyAccessorPattern('searchParams');
   const mutator = `(?:${propertyAccessorPattern('set')}|${propertyAccessorPattern('append')}|${propertyAccessorPattern('delete')})`;
   const parenthesizedRouteKey = `(?:\\(\\s*)*(?:${IDENTIFIER_PATTERN.source}|${ROUTE_KEY_LITERAL_EXPRESSION_PATTERN_SOURCE})(?:\\s*\\))*`;
-  const re = new RegExp(`\\bnew\\s+${URL_CONSTRUCTOR_PATTERN_SOURCE}\\s*\\(`, 'gu');
+  const constructorPattern = urlConstructorPattern(collectUrlConstructorAliases(text));
+  const re = new RegExp(`\\bnew\\s+(?:${constructorPattern})\\s*\\(`, 'gu');
   let match = re.exec(text);
   while (match) {
     const parsed = extractCallArgs(text, re.lastIndex);
@@ -2426,6 +2533,9 @@ function containsForbiddenInlineRouteUrlSearchParamsMutation(source, aliases, ex
       const suffixRe = new RegExp(`^\\s*(?:\\))*${searchParamsAccess}${mutator}\\s*(?:\\?\\.\\s*)?\\(\\s*(${parenthesizedRouteKey}|[^,\\)]+)\\s*(?:,|\\))`, 'u');
       const suffix = text.slice(parsed.end).match(suffixRe);
       if (suffix && sourceArgIsRouteKey(suffix[1], aliases)) return true;
+      const dispatchRe = new RegExp(`^\\s*(?:\\))*${searchParamsAccess}${mutator}\\s*(?:\\?\\.\\s*|\\.\\s*)(?:call|apply)\\s*\\(\\s*[^,]*,\\s*(?:\\[\\s*)?(${parenthesizedRouteKey}|[^,\\]\\)]+)`, 'u');
+      const dispatch = text.slice(parsed.end).match(dispatchRe);
+      if (dispatch && sourceArgIsRouteKey(dispatch[1], aliases)) return true;
     }
     if (parsed.end > re.lastIndex) re.lastIndex = parsed.end;
     match = re.exec(text);
