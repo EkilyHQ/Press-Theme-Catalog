@@ -324,6 +324,16 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
   );
   await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export const route = ({ endpoint }, post) => ((url) => { url.searchParams.set("id", post.id); return url.href; })(new URL(endpoint));',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export const route = ({ endpoint }, post) => (function(url) { url.searchParams.set("id", post.id); return url.href; })(new URL(endpoint));',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
     'import { endpoint } from "./config.js"; export default endpoint => endpoint + "?tab=posts";',
     'modules/interactions.js',
     { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
