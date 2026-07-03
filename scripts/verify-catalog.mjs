@@ -560,7 +560,7 @@ function collectLocalBindingNames(source) {
     }
     match = arrowRe.exec(text);
   }
-  const expressionArrowRe = /(?:^|[^\w$])(?:async\s*)?\(([^)]*)\)\s*=>\s*(?!\s*\{)([^;\n]+)/gu;
+  const expressionArrowRe = /(?:^|[^\w$])(?:async\s*)?\(([^)]*)\)\s*=>\s*(?!\s*\{)([^;]+)/gu;
   match = expressionArrowRe.exec(text);
   while (match) {
     if (routeGuardBodyLooksRelevant(match[2])) addBindingNamesFromPattern(bindings, match[1]);
@@ -576,7 +576,7 @@ function collectLocalBindingNames(source) {
     }
     match = singleArrowRe.exec(text);
   }
-  const singleExpressionArrowRe = /(?:^|[^\w$])(?:async\s+)?([A-Za-z_$][\w$]*)\s*=>\s*(?!\s*\{)([^;\n]+)/gu;
+  const singleExpressionArrowRe = /(?:^|[^\w$])(?:async\s+)?([A-Za-z_$][\w$]*)\s*=>\s*(?!\s*\{)([^;]+)/gu;
   match = singleExpressionArrowRe.exec(text);
   while (match) {
     if (routeGuardBodyLooksRelevant(match[2])) bindings.add(match[1]);
@@ -1175,7 +1175,9 @@ function expressionIsStaticRelativeUrl(value, aliases = new Set()) {
   const aliasExpression = aliasExpressionPattern(aliases);
   if (aliasExpression && new RegExp(`^(?:${aliasExpression})$`, 'u').test(text)) return true;
   const match = text.match(/^(['"`])((?:\\[\s\S]|(?!\1)[\s\S])*?)\1$/u);
-  return Boolean(match && !isExternalUrlPrefix(match[2]));
+  if (match) return !isExternalUrlPrefix(match[2]);
+  const concatPrefix = text.match(/^(['"`])((?:\\[\s\S]|(?!\1)[\s\S])*?)\1\s*\+/u);
+  return Boolean(concatPrefix && !isExternalUrlPrefix(concatPrefix[2]));
 }
 
 function urlConstructorArgsAreExternal(args, aliases = new Set(), staticRelativeAliases = new Set()) {
@@ -1293,7 +1295,7 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
     }
     match = blockArrowRe.exec(text);
   }
-  const functionRe = new RegExp(`\\(\\s*function(?:\\s+[A-Za-z_$][\\w$]*)?\\s*\\(\\s*(${IDENTIFIER_PATTERN.source})\\s*\\)\\s*\\{`, 'gu');
+  const functionRe = new RegExp(`\\(\\s*(?:async\\s+)?function(?:\\s+[A-Za-z_$][\\w$]*)?\\s*\\(\\s*(${IDENTIFIER_PATTERN.source})\\s*\\)\\s*\\{`, 'gu');
   match = functionRe.exec(text);
   while (match) {
     const span = extractBlockSpan(text, functionRe.lastIndex - 1);
