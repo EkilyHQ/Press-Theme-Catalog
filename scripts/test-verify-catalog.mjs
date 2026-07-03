@@ -298,6 +298,19 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'modules/interactions.js',
     { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
   );
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./internal.js"; export function route(post) { const url = new URL(endpoint, window.location.href); url.searchParams.set("id", post.id); return url.href; }',
+    'modules/interactions.js',
+    {
+      'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n',
+      'modules/internal.js': 'export const endpoint = location.href;\n'
+    }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { key } from "./config.js"; function unrelated(key) { return key; } export function route(post) { const url = new URL(location.href); url.searchParams.set(key, post.id); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const key = "id";\n' }
+  );
 });
 
 test('verifyCatalog scans v4 JSON and SVG packaged assets for public route literals', async () => {
