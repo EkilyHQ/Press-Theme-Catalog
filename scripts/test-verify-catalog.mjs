@@ -412,6 +412,9 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route(post) { const url = new URL(location.href); url.searchParams.set?.("id", post.location); return url.href; }'
   );
   await assertV4PackagedSourceRejected(
+    'export function route(post) { const url = new URL(location.href); const params = url["searchParams"]; params.set("id", post.location); return url.href; }'
+  );
+  await assertV4PackagedSourceRejected(
     'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } return mutate((new URL(location.href))); }'
   );
   await assertV4PackagedSourceRejected(
@@ -422,6 +425,12 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
   );
   await assertV4PackagedSourceRejected(
     'export function route() { return ((url) => (url.searchParams.set("id", "post.md"), url.href))((new URL(location.href))); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } return mutate?.(new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } return mutate["call"](null, new URL(location.href)); }'
   );
   await assertV4PackagedSourceRejected(
     'export function route() { return ((ctx, url) => { url.searchParams.set("id", "post.md"); return url.href; })("ctx", new URL(location.href)); }'

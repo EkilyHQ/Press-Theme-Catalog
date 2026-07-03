@@ -1416,7 +1416,7 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
     }
     return false;
   };
-  const callbackCallSuffix = /^\s*\)\s*(?:\.\s*(call|apply)\s*)?\(/u;
+  const callbackCallSuffix = new RegExp(`^\\s*\\)\\s*(?:(?:\\?\\.\\s*)?\\(|(?:\\?\\.\\s*)?\\.\\s*(call|apply)\\s*(?:\\?\\.\\s*)?\\(|\\?\\.\\s*\\[\\s*["'\`](call|apply)["'\`]\\s*\\]\\s*(?:\\?\\.\\s*)?\\(|\\[\\s*["'\`](call|apply)["'\`]\\s*\\]\\s*(?:\\?\\.\\s*)?\\()`, 'u');
   const re = new RegExp(`\\(\\s*(?:async\\s*)?\\(?\\s*(${IDENTIFIER_PATTERN.source})\\s*\\)?\\s*=>\\s*\\(([\\s\\S]*?)\\)\\s*\\)\\s*\\(\\s*new\\s+URL\\s*\\(`, 'gu');
   let match = re.exec(text);
   while (match) {
@@ -1450,7 +1450,7 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
     const suffix = text.slice(bodyParsed.end).match(callbackCallSuffix);
     if (suffix) {
       const argsStart = bodyParsed.end + suffix[0].length;
-      const parsed = inlineCallbackInvocationIsForbidden(match[1], bodyParsed.args, suffix[1] || 'direct', argsStart);
+      const parsed = inlineCallbackInvocationIsForbidden(match[1], bodyParsed.args, suffix[1] || suffix[2] || suffix[3] || 'direct', argsStart);
       if (parsed.forbidden) return true;
       if (parsed.end > expressionMethodRe.lastIndex) expressionMethodRe.lastIndex = parsed.end;
     } else if (bodyParsed.end > expressionMethodRe.lastIndex) {
@@ -1464,7 +1464,7 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
     const span = extractBlockSpan(text, blockArrowRe.lastIndex - 1);
     const suffix = text.slice(span.end).match(callbackCallSuffix);
     if (suffix) {
-      const parsed = inlineCallbackInvocationIsForbidden(match[1] || match[2], span.body, suffix[1] || 'direct', span.end + suffix[0].length);
+      const parsed = inlineCallbackInvocationIsForbidden(match[1] || match[2], span.body, suffix[1] || suffix[2] || suffix[3] || 'direct', span.end + suffix[0].length);
       if (parsed.forbidden) return true;
       if (parsed.end > blockArrowRe.lastIndex) blockArrowRe.lastIndex = parsed.end;
     }
@@ -1476,7 +1476,7 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
     const span = extractBlockSpan(text, functionRe.lastIndex - 1);
     const suffix = text.slice(span.end).match(callbackCallSuffix);
     if (suffix) {
-      const parsed = inlineCallbackInvocationIsForbidden(match[1], span.body, suffix[1] || 'direct', span.end + suffix[0].length);
+      const parsed = inlineCallbackInvocationIsForbidden(match[1], span.body, suffix[1] || suffix[2] || suffix[3] || 'direct', span.end + suffix[0].length);
       if (parsed.forbidden) return true;
       if (parsed.end > functionRe.lastIndex) functionRe.lastIndex = parsed.end;
     }
@@ -1571,7 +1571,7 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
   for (let i = 0; i < mutators.length; i += 1) {
     const { name, scope, ownerIndex } = mutators[i];
     const scopedText = text.slice(scope.start, scope.end);
-    const bindRe = new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*${expressionReferencePattern(name)}\\s*\\.\\s*bind\\s*\\(`, 'gu');
+    const bindRe = new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*${expressionReferencePattern(name)}${propertyAccessorPattern('bind')}\\s*(?:\\?\\.\\s*)?\\(`, 'gu');
     let bind = bindRe.exec(scopedText);
     while (bind) {
       const parsed = extractCallArgs(scopedText, bindRe.lastIndex);
@@ -1587,7 +1587,7 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
   for (const { name, scope, ownerIndex } of mutators) {
     const scopedText = text.slice(scope.start, scope.end);
     const calleePattern = expressionReferencePattern(name);
-    const directCallRe = new RegExp(`(^|[^\\w$.])${calleePattern}\\s*\\(`, 'gu');
+    const directCallRe = new RegExp(`(^|[^\\w$.])${calleePattern}\\s*(?:\\?\\.\\s*)?\\(`, 'gu');
     match = directCallRe.exec(scopedText);
     while (match) {
       const parsed = extractCallArgs(scopedText, directCallRe.lastIndex);
@@ -1597,10 +1597,10 @@ function containsForbiddenInlineRouteUrlCallbackMutation(source, aliases, extern
       if (parsed.end > directCallRe.lastIndex) directCallRe.lastIndex = parsed.end;
       match = directCallRe.exec(scopedText);
     }
-    const methodCallRe = new RegExp(`${calleePattern}\\s*\\.\\s*(call|apply)\\s*\\(`, 'gu');
+    const methodCallRe = new RegExp(`${calleePattern}(?:\\s*(?:\\?\\.\\s*)?\\.\\s*(call|apply)|\\s*\\?\\.\\s*\\[\\s*["'\`](call|apply)["'\`]\\s*\\]|\\s*\\[\\s*["'\`](call|apply)["'\`]\\s*\\])\\s*(?:\\?\\.\\s*)?\\(`, 'gu');
     match = methodCallRe.exec(scopedText);
     while (match) {
-      const method = match[1];
+      const method = match[1] || match[2] || match[3];
       const parsed = extractCallArgs(scopedText, methodCallRe.lastIndex);
       const parts = splitTopLevelArgs(parsed.args);
       const applyArgs = method === 'apply' ? splitTopLevelArgs((parts[1] || '').trim().replace(/^\[\s*|\s*\]$/gu, '')) : [];
@@ -1619,9 +1619,10 @@ function collectSearchParamsAliasesForRouteUrl(source, owner) {
   const text = String(source || '');
   const out = new Set();
   const ownerPattern = expressionReferencePattern(owner);
+  const searchParamsAccess = propertyAccessorPattern('searchParams');
   [
-    new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*${ownerPattern}\\s*\\.\\s*searchParams\\b(?:\\s*\\))*`, 'gu'),
-    new RegExp(`(?:^|[^\\w$.])(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*${ownerPattern}\\s*\\.\\s*searchParams\\b(?:\\s*\\))*`, 'gu')
+    new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*${ownerPattern}${searchParamsAccess}(?:\\s*\\))*`, 'gu'),
+    new RegExp(`(?:^|[^\\w$.])(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*${ownerPattern}${searchParamsAccess}(?:\\s*\\))*`, 'gu')
   ].forEach((re) => {
     let match = re.exec(text);
     while (match) {
@@ -1648,6 +1649,7 @@ function collectSearchParamsAliasesForRouteUrl(source, owner) {
 function collectInlineUrlSearchParamsAliases(source) {
   const text = String(source || '');
   const out = new Set();
+  const searchParamsAccess = propertyAccessorPattern('searchParams');
   [
     new RegExp(`\\b(?:const|let|var)\\s+(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*new\\s+URL\\s*\\(`, 'gu'),
     new RegExp(`(?:^|[^\\w$.])(${IDENTIFIER_PATTERN.source})\\s*=\\s*(?:\\(\\s*)*new\\s+URL\\s*\\(`, 'gu')
@@ -1655,7 +1657,7 @@ function collectInlineUrlSearchParamsAliases(source) {
     let match = re.exec(text);
     while (match) {
       const parsed = extractCallArgs(text, re.lastIndex);
-      const suffix = text.slice(parsed.end).match(/^\s*(?:\))*\s*\.\s*searchParams\b/u);
+      const suffix = text.slice(parsed.end).match(new RegExp(`^\\s*(?:\\))*${searchParamsAccess}`, 'u'));
       if (suffix) out.add(match[1]);
       if (parsed.end > re.lastIndex) re.lastIndex = parsed.end;
       match = re.exec(text);
