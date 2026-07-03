@@ -16,7 +16,7 @@ test('verifyCatalog accepts a matching local official theme and ZIP asset', asyn
       workspaceRoot,
       remote: false,
       verifyAssets: true,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, true);
@@ -25,7 +25,7 @@ test('verifyCatalog accepts a matching local official theme and ZIP asset', asyn
   });
 });
 
-test('verifyCatalog accepts supported v2 theme releases', async () => {
+test('verifyCatalog accepts transition v2 theme releases', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
     const theme = createThemeManifest({
       version: '3.4.3',
@@ -57,6 +57,107 @@ test('verifyCatalog accepts supported v2 theme releases', async () => {
   });
 });
 
+test('verifyCatalog rejects v3 theme releases that allow pre-transition Press versions', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({ pressRange: '>=3.4.0 <4.0.0' });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
+    const bytes = await readFile(zipPath);
+    release.engines.press = '>=3.4.0 <4.0.0';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.127'
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /contract v3 engines\.press must not accept Press versions before 3\.4\.127/u);
+  });
+});
+
+test('verifyCatalog accepts v3 theme releases that require a later Press patch', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({ pressRange: '>=3.4.128 <4.0.0' });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
+    const bytes = await readFile(zipPath);
+    release.engines.press = '>=3.4.128 <4.0.0';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.128'
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.failures, []);
+  });
+});
+
+test('verifyCatalog rejects v3 range clauses that allow pre-transition Press versions', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const pressRange = '>=3.4.0 <3.4.1 || >=3.4.127 <4.0.0';
+    const theme = createThemeManifest({ pressRange });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
+    const bytes = await readFile(zipPath);
+    release.engines.press = pressRange;
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.127'
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /contract v3 engines\.press must not accept Press versions before 3\.4\.127/u);
+  });
+});
+
+test('verifyCatalog rejects legacy v1 theme releases', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({ contractVersion: 1 });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
+    const bytes = await readFile(zipPath);
+    release.contractVersion = 1;
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.127'
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /contractVersion must be supported/u);
+  });
+});
+
 test('verifyCatalog rejects duplicate catalog identities and wrong repository URLs', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, catalog }) => {
     catalog.themes.push({
@@ -71,7 +172,7 @@ test('verifyCatalog rejects duplicate catalog identities and wrong repository UR
       workspaceRoot,
       remote: false,
       verifyAssets: false,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, false);
@@ -90,7 +191,7 @@ test('verifyCatalog rejects ZIP assets with a wrong digest', async () => {
       workspaceRoot,
       remote: false,
       verifyAssets: true,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, false);
@@ -116,7 +217,7 @@ test('verifyCatalog rejects ZIP inventory that differs from theme-release files'
       workspaceRoot,
       remote: false,
       verifyAssets: true,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, false);
@@ -138,7 +239,7 @@ test('verifyCatalog rejects ZIP assets with duplicate file paths', async () => {
       workspaceRoot,
       remote: false,
       verifyAssets: true,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, false);
@@ -165,7 +266,7 @@ test('verifyCatalog rejects ZIP theme manifest drift from theme-release', async 
       workspaceRoot,
       remote: false,
       verifyAssets: true,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, false);
@@ -188,7 +289,7 @@ test('verifyCatalog rejects ZIP theme manifests without declared modules', async
       workspaceRoot,
       remote: false,
       verifyAssets: true,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, false);
@@ -226,8 +327,8 @@ async function withFixture(callback) {
     await writeJson(path.join(workspaceRoot, 'Press', 'assets', 'press-system.json'), {
       schemaVersion: 1,
       type: 'press-system',
-      version: '3.4.59',
-      tag: 'v3.4.59'
+      version: '3.4.127',
+      tag: 'v3.4.127'
     });
     const themePath = path.join(themeRepo, 'theme', 'theme.json');
     await writeJson(themePath, createThemeManifest());
@@ -242,9 +343,9 @@ async function withFixture(callback) {
       value: 'arcus',
       label: 'Arcus',
       version: '3.4.2',
-      contractVersion: 1,
+      contractVersion: 3,
       engines: {
-        press: '>=3.4.0 <4.0.0'
+        press: '>=3.4.127 <4.0.0'
       },
       asset: {
         name: 'press-theme-arcus-v3.4.2.zip',
@@ -316,8 +417,8 @@ async function createThemeZip(tempDir, slug, options = {}) {
 
 function createThemeManifest(options = {}) {
   const version = options.version || '3.4.2';
-  const contractVersion = Number.isFinite(Number(options.contractVersion)) ? Number(options.contractVersion) : 1;
-  const pressRange = options.pressRange || '>=3.4.0 <4.0.0';
+  const contractVersion = Number.isFinite(Number(options.contractVersion)) ? Number(options.contractVersion) : 3;
+  const pressRange = options.pressRange || '>=3.4.127 <4.0.0';
   return {
     name: 'Arcus',
     version,

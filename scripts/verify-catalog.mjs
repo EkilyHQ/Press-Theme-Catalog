@@ -10,7 +10,8 @@ import { spawnSync } from 'node:child_process';
 
 const DEFAULT_PRESS_RELEASE_URL = 'https://raw.githubusercontent.com/EkilyHQ/Press/release-artifacts/system-release.json';
 const DEFAULT_OWNER = 'EkilyHQ';
-const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set([1, 2]);
+const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set([2, 3]);
+const THEME_CONTRACT_V3_MIN_PRESS_VERSION = '3.4.127';
 
 export async function verifyCatalog(options = {}) {
   const catalogPath = options.catalogPath || path.resolve('catalog.json');
@@ -182,12 +183,21 @@ function validateThemeRelease(entry, release, context) {
   } else if (context.pressVersion && !satisfiesSemverRange(context.pressVersion, pressRange)) {
     context.failures.push(`${slug}: release engines.press (${pressRange}) does not accept Press ${context.pressVersion}`);
   }
+  if (release.contractVersion === 3 && pressRange) {
+    validateV3PressRange(slug, pressRange, context.failures);
+  }
   if (!Array.isArray(release.files) || release.files.length === 0) {
     context.failures.push(`${slug}: release files must be a non-empty array`);
   } else {
     validateFileInventory(`${slug}: release files`, release.files, context.failures);
   }
   validateReleaseAsset(entry, release, context.failures);
+}
+
+function validateV3PressRange(slug, pressRange, failures) {
+  if (semverRangeAllowsBefore(pressRange, THEME_CONTRACT_V3_MIN_PRESS_VERSION)) {
+    failures.push(`${slug}: contract v3 engines.press must not accept Press versions before ${THEME_CONTRACT_V3_MIN_PRESS_VERSION}`);
+  }
 }
 
 function validateLocalTheme(entry, release, localTheme, failures) {
@@ -487,10 +497,28 @@ function compareSemver(left, right) {
   const a = parseSemver(left);
   const b = parseSemver(right);
   if (!a || !b) return NaN;
+  return compareSemverParts(a, b);
+}
+
+function compareSemverParts(a, b) {
   for (let index = 0; index < 3; index += 1) {
     if (a[index] !== b[index]) return a[index] < b[index] ? -1 : 1;
   }
   return 0;
+}
+
+function nextPatch(parts) {
+  return [parts[0], parts[1], parts[2] + 1];
+}
+
+function maxSemverParts(left, right) {
+  return compareSemverParts(left, right) >= 0 ? left : right;
+}
+
+function minSemverParts(left, right) {
+  if (!left) return right;
+  if (!right) return left;
+  return compareSemverParts(left, right) <= 0 ? left : right;
 }
 
 function satisfiesSemverRange(version, range) {
@@ -508,6 +536,36 @@ function satisfiesSemverRange(version, range) {
     if (op === '<') return compare < 0;
     return compare === 0;
   }));
+}
+
+function semverRangeAllowsBefore(range, boundaryVersion) {
+  const boundary = parseSemver(boundaryVersion);
+  if (!boundary) return false;
+  const clauses = stringValue(range).split('||').map((part) => part.trim()).filter(Boolean);
+  return clauses.some((clause) => semverClauseAllowsBefore(clause, boundary));
+}
+
+function semverClauseAllowsBefore(clause, boundary) {
+  const tokens = stringValue(clause).split(/\s+/u).filter(Boolean);
+  if (!tokens.length) return false;
+  let lower = [0, 0, 0];
+  let upper = boundary;
+  for (const token of tokens) {
+    const match = token.match(/^(>=|>|<=|<|=)?(\d+\.\d+\.\d+)$/u);
+    if (!match) return false;
+    const op = match[1] || '=';
+    const version = parseSemver(match[2]);
+    if (!version) return false;
+    if (op === '>=') lower = maxSemverParts(lower, version);
+    else if (op === '>') lower = maxSemverParts(lower, nextPatch(version));
+    else if (op === '<') upper = minSemverParts(upper, version);
+    else if (op === '<=') upper = minSemverParts(upper, nextPatch(version));
+    else {
+      lower = maxSemverParts(lower, version);
+      upper = minSemverParts(upper, nextPatch(version));
+    }
+  }
+  return compareSemverParts(lower, upper) < 0;
 }
 
 function parseArgs(argv) {
