@@ -184,7 +184,31 @@ test('verifyCatalog rejects v4 ZIP packaged source with public route literals', 
       extraFiles: {
         'modules/layout.js': 'export const href = "?lang=en&tab=posts";\n',
         'modules/views.js': 'export const postHref = "?id=post.md";\n',
-        'modules/interactions.js': 'export function route() { const url = new URL(location.href); url.searchParams.set("id", "post.md"); return url.href; }\n'
+        'modules/interactions.js': [
+          'export function route(post, tab) {',
+          '  const url = new URL(location.href);',
+          '  url.searchParams.set("id", "post.md");',
+          '  const key = "tab";',
+          '  url.searchParams.set(key, tab);',
+          '  const params = new URLSearchParams();',
+          '  params.set("tab", "posts");',
+          '  const objectParams = new URLSearchParams({ id: post.id });',
+          '  const arrayParams = new URLSearchParams([["tab", tab]]);',
+          '  const routeKey = "id";',
+          '  const aliasParams = new URLSearchParams([[routeKey, post.location]]);',
+          '  const splitParams = new URLSearchParams("id" + "=" + post.location);',
+          '  const multilineParams = new URLSearchParams({',
+          '    id: post.id',
+          '  });',
+          '  const id = post.id;',
+          '  const shorthandParams = new URLSearchParams({ id });',
+          '  const currentParams = new URLSearchParams();',
+          '  currentParams.set("tab", "posts");',
+          '  location.search = currentParams.toString();',
+          '  location.search = new URLSearchParams([["tab", tab]]).toString();',
+          '  return ["?" + params, "?" + objectParams, `?${arrayParams}`, "?" + aliasParams, "?" + splitParams, "?" + multilineParams, "?" + shorthandParams, "?" + new URLSearchParams({ id: post.id }), "?" + (new URLSearchParams({ id: post.id })), `?${new URLSearchParams({ id: post.id })}`, "?" + new URLSearchParams(`${routeKey}=${post.location}`), `?${new URLSearchParams(`${routeKey}=${post.location}`)}`, `?${routeKey}=${post.location}`, "?" + routeKey + "=" + post.location, "?" + "id=" + post.id, "?" + "id" + "=" + post.id, url.href];',
+          '}'
+        ].join('\n')
       }
     });
     const bytes = await readFile(zipPath);
@@ -210,6 +234,28 @@ test('verifyCatalog rejects v4 ZIP packaged source with public route literals', 
   });
 });
 
+test('verifyCatalog rejects isolated v4 route-key alias public route builders', async () => {
+  const sources = [
+    'export function route(post) { const key = "id"; return `?${new URLSearchParams(`${key}=${post.id}`)}`; }',
+    'export function route(post) { const key = "id"; return `?${new URLSearchParams(`${(key)}=${post.id}`)}`; }',
+    'export function route(post) { const key = "id"; return "?" + new URLSearchParams((key) + "=" + post.id); }',
+    'export function route(post) { return "?" + new URLSearchParams(("id") + "=" + post.id); }',
+    'export function route(post) { const key = "id"; return `?${key}=${post.id}`; }',
+    'export function route(post) { const key = "id"; return `?${(key)}=${post.id}`; }',
+    'export function route(post) { return `?${("id")}=${post.id}`; }',
+    'export function route(post) { const key = "id"; return "?" + key + "=" + post.id; }',
+    'export function route(post) { const key = "id"; return "?" + (key) + "=" + post.id; }',
+    'export function route(post) { return "?" + ("id") + "=" + post.id; }',
+    'export function route(post) { return "?" + (("id")) + "=" + post.id; }',
+    'export function route() { const key = "id"; const url = new URL(location.href); url.searchParams.set((key), "post.md"); return url.href; }',
+    'export function route() { const url = new URL(location.href); url.searchParams.set(("id"), "post.md"); return url.href; }',
+    'export function route() { const url = new URL(location.href); url.searchParams.set((("id")), "post.md"); return url.href; }'
+  ];
+  for (const source of sources) {
+    await assertV4PackagedSourceRejected(source);
+  }
+});
+
 test('verifyCatalog allows v4 ZIP packaged source with external query strings', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
     const theme = createThemeManifest({
@@ -228,7 +274,20 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
           '  const url = new URL("https://analytics.example.test/collect");',
           '  url.searchParams.set(routeKey, "posts");',
           '  url.searchParams.set("utm_source", "press-theme");',
-          '  return { productUrl, url: url.href };',
+          '  const productParams = new URLSearchParams({ id: "sku-123" });',
+          '  const stringParams = new URLSearchParams("id=sku-123");',
+          '  const layoutParams = new URLSearchParams({ grid: "dense" });',
+          '  const externalBase = "https://example.test/product";',
+          '  const externalRouteKey = "id";',
+          '  const externalUrl = new URL(externalBase);',
+          '  externalUrl.searchParams.set("id", "sku-123");',
+          '  const externalUrlWithBase = new URL(externalBase, window.location.href);',
+          '  externalUrlWithBase.searchParams.set("id", "sku-123");',
+          '  const derivedExternalUrl = new URL(externalBase + "/details", window.location.href);',
+          '  derivedExternalUrl.searchParams.set("id", "sku-123");',
+          '  const templateExternalUrl = new URL(`${externalBase}/variant`, window.location.href);',
+          '  templateExternalUrl.searchParams.set("id", "sku-123");',
+          '  return { productUrl, objectUrl: "https://example.test/product?" + productParams, inlineObjectUrl: "https://example.test/product?" + new URLSearchParams({ id: "sku-123" }), inlineTemplateUrl: `https://example.test/product?${new URLSearchParams({ id: "sku-123" })}`, aliasInlineTemplateUrl: `${externalBase}?${new URLSearchParams({ id: "sku-123" })}`, stringUrl: "https://example.test/product?" + stringParams, aliasStringUrl: externalBase + "?" + stringParams, grid: "https://example.test/layout?" + layoutParams, splitUrl: externalBase + "?" + "id=" + "sku-123", splitKeyUrl: externalBase + "?" + "id" + "=" + "sku-123", aliasSplitUrl: externalBase + "?" + externalRouteKey + "=" + "sku-123", aliasTemplateUrl: `${externalBase}?${externalRouteKey}=sku-123`, url: url.href, externalUrl: externalUrl.href, externalUrlWithBase: externalUrlWithBase.href, derivedExternalUrl: derivedExternalUrl.href, templateExternalUrl: templateExternalUrl.href };',
           '}'
         ].join('\n')
       }
@@ -254,6 +313,50 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
     assert.equal(result.ok, true);
   });
 });
+
+async function assertV4PackagedSourceRejected(source) {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({
+      version: '3.4.6',
+      contractVersion: 4,
+      pressRange: '>=3.4.130 <4.0.0'
+    });
+    await writeJson(themePath, theme);
+    await writeFile(path.join(path.dirname(themePath), 'modules', 'interactions.js'), `${source}\n`);
+    const zipPath = await createThemeZip(tempDir, 'arcus', {
+      themeJson: theme,
+      extraFiles: {
+        'modules/interactions.js': `${source}\n`
+      }
+    });
+    const bytes = await readFile(zipPath);
+    release.version = '3.4.6';
+    release.contractVersion = 4;
+    release.engines.press = '>=3.4.130 <4.0.0';
+    release.asset.name = 'press-theme-arcus-v3.4.6.zip';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    release.files = [
+      'modules/interactions.js',
+      'modules/layout.js',
+      'theme.css',
+      'theme.json'
+    ];
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.130'
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /contract v4 ZIP packaged source must use router href helpers/u);
+  });
+}
 
 test('verifyCatalog rejects v3 range clauses that allow pre-transition Press versions', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
