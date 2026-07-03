@@ -10,8 +10,14 @@ import { spawnSync } from 'node:child_process';
 
 const DEFAULT_PRESS_RELEASE_URL = 'https://raw.githubusercontent.com/EkilyHQ/Press/release-artifacts/system-release.json';
 const DEFAULT_OWNER = 'EkilyHQ';
-const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set([3]);
+const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set([3, 4]);
 const THEME_CONTRACT_V3_MIN_PRESS_VERSION = '3.4.127';
+const THEME_CONTRACT_V4_MIN_PRESS_VERSION = '3.4.130';
+const V4_PUBLIC_ROUTE_CONSTRUCTION_PATTERNS = [
+  /[?&](?:tab|id)=/u,
+  /\bnew\s+URLSearchParams\s*\(\s*['"`][^'"`]*(?:[?&]?(?:tab|id)=)/u,
+  /\bsearchParams\s*\.\s*(?:set|append)\(\s*(?!['"`]lang['"`])/u
+];
 
 export async function verifyCatalog(options = {}) {
   const catalogPath = options.catalogPath || path.resolve('catalog.json');
@@ -186,6 +192,9 @@ function validateThemeRelease(entry, release, context) {
   if (release.contractVersion === 3 && pressRange) {
     validateV3PressRange(slug, pressRange, context.failures);
   }
+  if (release.contractVersion === 4 && pressRange) {
+    validateV4PressRange(slug, pressRange, context.failures);
+  }
   if (!Array.isArray(release.files) || release.files.length === 0) {
     context.failures.push(`${slug}: release files must be a non-empty array`);
   } else {
@@ -197,6 +206,12 @@ function validateThemeRelease(entry, release, context) {
 function validateV3PressRange(slug, pressRange, failures) {
   if (semverRangeAllowsBefore(pressRange, THEME_CONTRACT_V3_MIN_PRESS_VERSION)) {
     failures.push(`${slug}: contract v3 engines.press must not accept Press versions before ${THEME_CONTRACT_V3_MIN_PRESS_VERSION}`);
+  }
+}
+
+function validateV4PressRange(slug, pressRange, failures) {
+  if (semverRangeAllowsBefore(pressRange, THEME_CONTRACT_V4_MIN_PRESS_VERSION)) {
+    failures.push(`${slug}: contract v4 engines.press must not accept Press versions before ${THEME_CONTRACT_V4_MIN_PRESS_VERSION}`);
   }
 }
 
@@ -277,6 +292,9 @@ async function verifyThemeAsset(entry, release, context) {
       } else if (actual.includes('theme.json')) {
         context.failures.push(`${slug}: ZIP theme.json must be valid JSON`);
       }
+      if (release.contractVersion === 4 && inventory.routeLiteralFiles.length) {
+        context.failures.push(`${slug}: contract v4 ZIP packaged source must use router href helpers instead of public route literals in ${inventory.routeLiteralFiles.join(', ')}`);
+      }
     }
   } catch (error) {
     context.failures.push(`${slug}: failed to verify asset: ${error.message}`);
@@ -318,16 +336,34 @@ async function inspectZip(bytes, expectedRoot) {
         themeJson = null;
       }
     }
+    const files = entries
+      .filter((entry) => entry.startsWith(rootPrefix) && !entry.endsWith('/'))
+      .map((entry) => entry.slice(rootPrefix.length));
+    const routeLiteralFiles = [];
+    for (const file of files) {
+      if (!shouldScanForPublicRouteLiterals(file)) continue;
+      try {
+        const contents = runUnzip(['-p', zipPath, `${expectedRoot}/${file}`]);
+        if (V4_PUBLIC_ROUTE_CONSTRUCTION_PATTERNS.some((pattern) => pattern.test(contents))) routeLiteralFiles.push(file);
+      } catch {
+        // Other ZIP structure checks report unreadable files.
+      }
+    }
     return {
       failures,
-      files: entries
-        .filter((entry) => entry.startsWith(rootPrefix) && !entry.endsWith('/'))
-        .map((entry) => entry.slice(rootPrefix.length)),
-      themeJson
+      files,
+      themeJson,
+      routeLiteralFiles
     };
   } finally {
     await rm(tempDir, { force: true, recursive: true });
   }
+}
+
+function shouldScanForPublicRouteLiterals(file) {
+  const normalized = stringValue(file).toLowerCase();
+  if (!normalized || normalized === 'theme.json') return false;
+  return /\.(?:js|mjs|cjs|css|html?|md|txt)$/u.test(normalized);
 }
 
 function runUnzip(args) {

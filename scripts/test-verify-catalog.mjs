@@ -107,6 +107,109 @@ test('verifyCatalog accepts v3 theme releases that require a later Press patch',
   });
 });
 
+test('verifyCatalog accepts v4 theme releases for the route-helper transition', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({
+      version: '3.4.6',
+      contractVersion: 4,
+      pressRange: '>=3.4.130 <4.0.0'
+    });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
+    const bytes = await readFile(zipPath);
+    release.version = '3.4.6';
+    release.contractVersion = 4;
+    release.engines.press = '>=3.4.130 <4.0.0';
+    release.asset.name = 'press-theme-arcus-v3.4.6.zip';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.130'
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.failures, []);
+  });
+});
+
+test('verifyCatalog rejects v4 theme releases that allow pre-route-helper Press versions', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({
+      version: '3.4.6',
+      contractVersion: 4,
+      pressRange: '>=3.4.129 <4.0.0'
+    });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
+    const bytes = await readFile(zipPath);
+    release.version = '3.4.6';
+    release.contractVersion = 4;
+    release.engines.press = '>=3.4.129 <4.0.0';
+    release.asset.name = 'press-theme-arcus-v3.4.6.zip';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.130'
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /contract v4 engines\.press must not accept Press versions before 3\.4\.130/u);
+  });
+});
+
+test('verifyCatalog rejects v4 ZIP packaged source with public route literals', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({
+      version: '3.4.6',
+      contractVersion: 4,
+      pressRange: '>=3.4.130 <4.0.0'
+    });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', {
+      themeJson: theme,
+      extraFiles: {
+        'modules/layout.js': 'export const href = "?lang=en&tab=posts";\n',
+        'modules/views.js': 'export const postHref = "?id=post.md";\n',
+        'modules/interactions.js': 'export function route() { const url = new URL(location.href); url.searchParams.set("id", "post.md"); return url.href; }\n'
+      }
+    });
+    const bytes = await readFile(zipPath);
+    release.version = '3.4.6';
+    release.contractVersion = 4;
+    release.engines.press = '>=3.4.130 <4.0.0';
+    release.asset.name = 'press-theme-arcus-v3.4.6.zip';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.130'
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /contract v4 ZIP packaged source must use router href helpers/u);
+  });
+});
+
 test('verifyCatalog rejects v3 range clauses that allow pre-transition Press versions', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
     const pressRange = '>=3.4.0 <3.4.1 || >=3.4.127 <4.0.0';

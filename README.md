@@ -29,3 +29,8 @@ digest, root folder, symlink safety, duplicate paths, file inventory, and
 packaged `theme.json` metadata. Press engine ranges intentionally use the
 release manifest grammar already used by official themes, such as
 `>=3.4.0 <4.0.0`.
+
+During the theme contract v4 transition the verifier accepts contracts v3 and
+v4. Contract v4 releases must require Press `>=3.4.130` and their packaged
+source must use runtime router href helpers instead of hardcoded public route
+query strings.
