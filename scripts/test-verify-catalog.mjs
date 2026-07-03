@@ -238,6 +238,8 @@ test('verifyCatalog rejects v4 ZIP packaged source with public route literals', 
           '  const params = new URLSearchParams();',
           '  params.set("tab", "posts");',
           '  const objectParams = new URLSearchParams({ id: post.id });',
+          '  const entriesParams = new URLSearchParams(Object.entries({ id: post.id }));',
+          '  const mapParams = new URLSearchParams(new Map([["id", post.id]]));',
           '  const parenthesizedObjectParams = (new URLSearchParams({ id: post.id }));',
           '  const objectQuery = objectParams.toString();',
           '  const queryAlias = "id=" + post.id;',
@@ -259,13 +261,18 @@ test('verifyCatalog rejects v4 ZIP packaged source with public route literals', 
           '  location.search += compoundParams;',
           '  const compoundObjectParams = new URLSearchParams({ id: post.id });',
           '  location.search += compoundObjectParams.toString();',
+          '  location.search =',
+          '    "id=" + post.id;',
           '  location.search = new URLSearchParams([["tab", tab]]).toString();',
+          '  location.search = new URLSearchParams(Object.entries({ id: post.id }));',
           '  location.search = "id=" + post.id;',
           '  location.search = `${routeKey}=${post.location}`;',
           '  location.search += routeKey + "=" + post.location;',
           '  let assignedUrl;',
           '  assignedUrl = new URL(location.href);',
           '  assignedUrl.searchParams.set("id", post.id);',
+          '  assignedUrl.search = routeKey + "=" + post.id;',
+          '  assignedUrl.search = new URLSearchParams({ id: post.id });',
           '  const multilineUrl = new URL(',
           '    location.href',
           '  );',
@@ -273,7 +280,7 @@ test('verifyCatalog rejects v4 ZIP packaged source with public route literals', 
           '  const externalBase = "https://api.example.test";',
           '  const currentUrlWithExternalBase = new URL(location.href, externalBase);',
           '  currentUrlWithExternalBase.searchParams.set("id", post.id);',
-          '  return ["?" + params, "?" + objectParams, "?" + parenthesizedObjectParams, "?" + objectQuery, "?" + queryAlias, "?" + parenthesizedQueryAlias, `?${arrayParams}`, "?" + aliasParams, "?" + splitParams, "?" + multilineParams, "?" + shorthandParams, "?" + new URLSearchParams({ id: post.id }), "?" + (new URLSearchParams({ id: post.id })), `?${new URLSearchParams({ id: post.id })}`, "?" + new URLSearchParams(`${routeKey}=${post.location}`), `?${new URLSearchParams(`${routeKey}=${post.location}`)}`, `?${routeKey}=${post.location}`, "?" + routeKey + "=" + post.location, "?" + "id=" + post.id, "?" + "id" + "=" + post.id, url.href, assignedUrl.href, multilineUrl.href, currentUrlWithExternalBase.href];',
+          '  return ["?" + params, "?" + objectParams, "?" + entriesParams, "?" + mapParams, "?" + String(objectParams), "?" + parenthesizedObjectParams, "?" + objectQuery, "?" + queryAlias, "?" + parenthesizedQueryAlias, `?${arrayParams}`, "?" + aliasParams, "?" + splitParams, "?" + multilineParams, "?" + shorthandParams, "?" + new URLSearchParams({ id: post.id }), "?" + (new URLSearchParams({ id: post.id })), `?${new URLSearchParams({ id: post.id })}`, "?" + new URLSearchParams(`${routeKey}=${post.location}`), `?${new URLSearchParams(`${routeKey}=${post.location}`)}`, `?${routeKey}=${post.location}`, "?" + routeKey + "=" + post.location, "?" + "id=" + post.id, "?" + "id" + "=" + post.id, url.href, assignedUrl.href, multilineUrl.href, currentUrlWithExternalBase.href];',
           '}'
         ].join('\n')
       }
@@ -325,13 +332,20 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route(post) { const url = new URL(location.href); const { searchParams: params } = url; params.set("id", post.id); return url.href; }',
     'export function route(post) { const params = new URL(location.href).searchParams; params.set("id", post.id); return "?" + params; }',
     'export function route(post) { const { searchParams } = new URL(location.href); searchParams.set("id", post.id); return `?${searchParams}`; }',
+    'export function route(post) { const params = new URLSearchParams(Object.entries({ id: post.id })); return "?" + params; }',
+    'export function route(post) { const params = new URLSearchParams(new Map([["id", post.id]])); return "?" + params; }',
+    'export function route(post) { const params = new URLSearchParams({ id: post.id }); return "?" + String(params); }',
     'export function route(post) { const qs = "id=" + post.id; location.search = qs; }',
+    'export function route(post) { location.search =\n  "id=" + post.id; }',
+    'export function route(post) { location.search = new URLSearchParams(Object.entries({ id: post.id })); }',
     'export function route(post) { const key = "id"; let qs; qs = key + "=" + post.id; location.search = qs.toString(); }',
     'export function route(post) { const loc = location; const key = "id"; const qs = key + "=" + post.id; loc.search = qs; }',
     'export function route(post) { const key = "id"; window.location["search"] = key + "=" + post.id; }',
     'export function route(post) { const loc = location; const key = "id"; loc["search"] = key + "=" + post.id; }',
     'export function route(post) { const { location: loc } = window; const key = "id"; const qs = key + "=" + post.id; loc.search = qs; }',
     'export function route(post) { const loc = window.location; const params = new URLSearchParams({ id: post.id }); loc.search = params; }',
+    'export function route(post) { const key = "id"; const url = new URL(location.href); url.search = key + "=" + post.id; return url.href; }',
+    'export function route(post) { const url = new URL(location.href); url.search = new URLSearchParams({ id: post.id }); return url.href; }',
     'export function route(post) { state.params = new URLSearchParams({ id: post.id }); return "?" + state.params; }'
   ];
   for (const source of sources) {
@@ -447,6 +461,9 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
   );
   await assertV4PackagedSourceRejected(
     'export function route(post) { function mutate(url) { url.searchParams.set("id", post.location); return url.href; } return mutate(new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route(post) { function mutate(url) { url.search = "id=" + post.location; return url.href; } return mutate(new URL(location.href)); }'
   );
   await assertV4PackagedSourceRejected(
     'export function route() { const helper = { mutate(ctx, url) { url.searchParams.set("id", "post.md"); return url.href; } }; return helper.mutate(null, new URL(location.href)); }'
