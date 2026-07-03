@@ -16,7 +16,7 @@ test('verifyCatalog accepts a matching local official theme and ZIP asset', asyn
       workspaceRoot,
       remote: false,
       verifyAssets: true,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, true);
@@ -54,6 +54,31 @@ test('verifyCatalog accepts transition v2 theme releases', async () => {
 
     assert.equal(result.ok, true);
     assert.deepEqual(result.failures, []);
+  });
+});
+
+test('verifyCatalog rejects v3 theme releases that allow pre-transition Press versions', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({ pressRange: '>=3.4.0 <4.0.0' });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
+    const bytes = await readFile(zipPath);
+    release.engines.press = '>=3.4.0 <4.0.0';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.127'
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /contract v3 engines\.press must start at Press 3\.4\.127/u);
   });
 });
 
@@ -96,7 +121,7 @@ test('verifyCatalog rejects duplicate catalog identities and wrong repository UR
       workspaceRoot,
       remote: false,
       verifyAssets: false,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, false);
@@ -115,7 +140,7 @@ test('verifyCatalog rejects ZIP assets with a wrong digest', async () => {
       workspaceRoot,
       remote: false,
       verifyAssets: true,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, false);
@@ -141,7 +166,7 @@ test('verifyCatalog rejects ZIP inventory that differs from theme-release files'
       workspaceRoot,
       remote: false,
       verifyAssets: true,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, false);
@@ -163,7 +188,7 @@ test('verifyCatalog rejects ZIP assets with duplicate file paths', async () => {
       workspaceRoot,
       remote: false,
       verifyAssets: true,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, false);
@@ -190,7 +215,7 @@ test('verifyCatalog rejects ZIP theme manifest drift from theme-release', async 
       workspaceRoot,
       remote: false,
       verifyAssets: true,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, false);
@@ -213,7 +238,7 @@ test('verifyCatalog rejects ZIP theme manifests without declared modules', async
       workspaceRoot,
       remote: false,
       verifyAssets: true,
-      pressVersion: '3.4.59'
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, false);
@@ -251,8 +276,8 @@ async function withFixture(callback) {
     await writeJson(path.join(workspaceRoot, 'Press', 'assets', 'press-system.json'), {
       schemaVersion: 1,
       type: 'press-system',
-      version: '3.4.59',
-      tag: 'v3.4.59'
+      version: '3.4.127',
+      tag: 'v3.4.127'
     });
     const themePath = path.join(themeRepo, 'theme', 'theme.json');
     await writeJson(themePath, createThemeManifest());
@@ -269,7 +294,7 @@ async function withFixture(callback) {
       version: '3.4.2',
       contractVersion: 3,
       engines: {
-        press: '>=3.4.0 <4.0.0'
+        press: '>=3.4.127 <4.0.0'
       },
       asset: {
         name: 'press-theme-arcus-v3.4.2.zip',
@@ -342,7 +367,7 @@ async function createThemeZip(tempDir, slug, options = {}) {
 function createThemeManifest(options = {}) {
   const version = options.version || '3.4.2';
   const contractVersion = Number.isFinite(Number(options.contractVersion)) ? Number(options.contractVersion) : 3;
-  const pressRange = options.pressRange || '>=3.4.0 <4.0.0';
+  const pressRange = options.pressRange || '>=3.4.127 <4.0.0';
   return {
     name: 'Arcus',
     version,
