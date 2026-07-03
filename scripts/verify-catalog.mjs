@@ -366,7 +366,7 @@ async function inspectZip(bytes, expectedRoot) {
 function shouldScanForPublicRouteLiterals(file) {
   const normalized = stringValue(file).toLowerCase();
   if (!normalized || normalized === 'theme.json') return false;
-  return /\.(?:js|mjs|cjs|css|html?|md|txt)$/u.test(normalized);
+  return /\.(?:css|js|json|mjs|svg|txt)$/u.test(normalized);
 }
 
 function isExternalUrlPrefix(value) {
@@ -400,12 +400,29 @@ function containsRelativePressRouteLiteral(content) {
   return false;
 }
 
-function containsForbiddenRouteLiteral(source) {
+function stringLiteralIsExternalUrlConstructorArg(source, literalMatch, externalAliases = new Set()) {
+  const text = String(source || '');
+  const before = text.slice(0, literalMatch.index);
+  const callMatch = before.match(/\bnew\s+URL\s*\(\s*$/u);
+  if (!callMatch) return false;
+  const callPrefixIndex = before.length - callMatch[0].length;
+  const argsStart = callPrefixIndex + callMatch[0].lastIndexOf('(') + 1;
+  const parsed = extractCallArgs(text, argsStart);
+  const parts = splitTopLevelArgs(parsed.args);
+  return parts.length > 1
+    && expressionIsStaticRelativeUrl(parts[0])
+    && expressionIsExternalUrl(parts[1], externalAliases);
+}
+
+function containsForbiddenRouteLiteral(source, externalAliases = new Set()) {
   const text = String(source || '');
   STRING_LITERAL_PATTERN.lastIndex = 0;
   let match = STRING_LITERAL_PATTERN.exec(text);
   while (match) {
-    if (containsRelativePressRouteLiteral(match[2])) return true;
+    if (containsRelativePressRouteLiteral(match[2])
+      && !stringLiteralIsExternalUrlConstructorArg(text, match, externalAliases)) {
+      return true;
+    }
     match = STRING_LITERAL_PATTERN.exec(text);
   }
   return false;
@@ -845,7 +862,7 @@ function containsForbiddenRouteUrlMutation(source, aliases) {
 
 function containsForbiddenLocationSearchAssignment(source, aliases = new Set()) {
   const text = String(source || '');
-  const re = /\b(?:window\s*\.\s*)?location\s*\.\s*search\s*=/gu;
+  const re = /\b(?:window\s*\.\s*)?location\s*\.\s*search\s*(?:\+=|=(?!=|>))/gu;
   let match = re.exec(text);
   while (match) {
     const expression = extractAssignmentExpression(text, re.lastIndex);
@@ -858,7 +875,8 @@ function containsForbiddenLocationSearchAssignment(source, aliases = new Set()) 
 function containsForbiddenV4RouteConstruction(source) {
   const text = String(source || '');
   const aliases = collectRouteKeyAliases(text);
-  return containsForbiddenRouteLiteral(text)
+  const externalAliases = collectExternalUrlAliases(text);
+  return containsForbiddenRouteLiteral(text, externalAliases)
     || containsForbiddenLocationSearchAssignment(text, aliases)
     || containsForbiddenUrlSearchParamsInitializer(text, aliases)
     || containsForbiddenInlineUrlSearchParamsInitializer(text, aliases)

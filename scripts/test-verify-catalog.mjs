@@ -208,6 +208,7 @@ test('verifyCatalog rejects v4 ZIP packaged source with public route literals', 
           '  location.search = new URLSearchParams([["tab", tab]]).toString();',
           '  location.search = "id=" + post.id;',
           '  location.search = `${routeKey}=${post.location}`;',
+          '  location.search += routeKey + "=" + post.location;',
           '  let assignedUrl;',
           '  assignedUrl = new URL(location.href);',
           '  assignedUrl.searchParams.set("id", post.id);',
@@ -268,6 +269,11 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
   }
 });
 
+test('verifyCatalog scans v4 JSON and SVG packaged assets for public route literals', async () => {
+  await assertV4PackagedSourceRejected('{"href":"?tab=posts"}', 'assets/data.json');
+  await assertV4PackagedSourceRejected('<svg><a href="?id=post.md"/></svg>', 'assets/icon.svg');
+});
+
 test('verifyCatalog allows v4 ZIP packaged source with external query strings', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
     const theme = createThemeManifest({
@@ -297,11 +303,12 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
           '  externalUrlWithBase.searchParams.set("id", "sku-123");',
           '  const externalUrlFromBase = new URL("/product", externalBase);',
           '  externalUrlFromBase.searchParams.set("id", "sku-123");',
+          '  const externalUrlWithQueryFromBase = new URL("/product?id=sku-123", externalBase);',
           '  const derivedExternalUrl = new URL(externalBase + "/details", window.location.href);',
           '  derivedExternalUrl.searchParams.set("id", "sku-123");',
           '  const templateExternalUrl = new URL(`${externalBase}/variant`, window.location.href);',
           '  templateExternalUrl.searchParams.set("id", "sku-123");',
-          '  return { productUrl, objectUrl: "https://example.test/product?" + productParams, inlineObjectUrl: "https://example.test/product?" + new URLSearchParams({ id: "sku-123" }), inlineTemplateUrl: `https://example.test/product?${new URLSearchParams({ id: "sku-123" })}`, aliasInlineTemplateUrl: `${externalBase}?${new URLSearchParams({ id: "sku-123" })}`, stringUrl: "https://example.test/product?" + stringParams, aliasStringUrl: externalBase + "?" + stringParams, grid: "https://example.test/layout?" + layoutParams, splitUrl: externalBase + "?" + "id=" + "sku-123", splitKeyUrl: externalBase + "?" + "id" + "=" + "sku-123", aliasSplitUrl: externalBase + "?" + externalRouteKey + "=" + "sku-123", aliasTemplateUrl: `${externalBase}?${externalRouteKey}=sku-123`, url: url.href, externalUrl: externalUrl.href, externalUrlWithBase: externalUrlWithBase.href, externalUrlFromBase: externalUrlFromBase.href, derivedExternalUrl: derivedExternalUrl.href, templateExternalUrl: templateExternalUrl.href };',
+          '  return { productUrl, objectUrl: "https://example.test/product?" + productParams, inlineObjectUrl: "https://example.test/product?" + new URLSearchParams({ id: "sku-123" }), inlineTemplateUrl: `https://example.test/product?${new URLSearchParams({ id: "sku-123" })}`, aliasInlineTemplateUrl: `${externalBase}?${new URLSearchParams({ id: "sku-123" })}`, stringUrl: "https://example.test/product?" + stringParams, aliasStringUrl: externalBase + "?" + stringParams, grid: "https://example.test/layout?" + layoutParams, splitUrl: externalBase + "?" + "id=" + "sku-123", splitKeyUrl: externalBase + "?" + "id" + "=" + "sku-123", aliasSplitUrl: externalBase + "?" + externalRouteKey + "=" + "sku-123", aliasTemplateUrl: `${externalBase}?${externalRouteKey}=sku-123`, url: url.href, externalUrl: externalUrl.href, externalUrlWithBase: externalUrlWithBase.href, externalUrlFromBase: externalUrlFromBase.href, externalUrlWithQueryFromBase: externalUrlWithQueryFromBase.href, derivedExternalUrl: derivedExternalUrl.href, templateExternalUrl: templateExternalUrl.href };',
           '}'
         ].join('\n')
       }
@@ -328,7 +335,7 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
   });
 });
 
-async function assertV4PackagedSourceRejected(source) {
+async function assertV4PackagedSourceRejected(source, file = 'modules/interactions.js') {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
     const theme = createThemeManifest({
       version: '3.4.6',
@@ -336,11 +343,10 @@ async function assertV4PackagedSourceRejected(source) {
       pressRange: '>=3.4.130 <4.0.0'
     });
     await writeJson(themePath, theme);
-    await writeFile(path.join(path.dirname(themePath), 'modules', 'interactions.js'), `${source}\n`);
     const zipPath = await createThemeZip(tempDir, 'arcus', {
       themeJson: theme,
       extraFiles: {
-        'modules/interactions.js': `${source}\n`
+        [file]: `${source}\n`
       }
     });
     const bytes = await readFile(zipPath);
@@ -352,7 +358,7 @@ async function assertV4PackagedSourceRejected(source) {
     release.asset.size = bytes.length;
     release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
     release.files = [
-      'modules/interactions.js',
+      file,
       'modules/layout.js',
       'theme.css',
       'theme.json'
