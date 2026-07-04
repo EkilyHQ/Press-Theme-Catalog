@@ -338,9 +338,13 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route(post) { const key = "id"; return "?" + (key) + "=" + post.id; }',
     'export function route(post) { return "?" + ("id") + "=" + post.id; }',
     'export function route(post) { return "?" + (("id")) + "=" + post.id; }',
+    'export function route(post) { return "?" + ("id=" + post.id); }',
+    'export function route(post) { return "?" + (`id=${post.id}`); }',
+    'export function route(post) { return "?" + ("i" + "d" + "=" + post.id); }',
     'export function route() { const key = "id"; const url = new URL(location.href); url.searchParams.set((key), "post.md"); return url.href; }',
     'export function route() { const url = new URL(location.href); url.searchParams.set(("id"), "post.md"); return url.href; }',
     'export function route() { const url = new URL(location.href); url.searchParams.set((("id")), "post.md"); return url.href; }',
+    'export function route(post) { const url = new URL(location.href); url.searchParams.set("i" + "d", post.id); return url.href; }',
     'export function route(post) { const unused = 1, key = "id"; const url = new URL(location.href); url.searchParams.set(key, post.id); return url.href; }',
     'export function route(post) { const key = "\\u0069d"; const url = new URL(location.href); url.searchParams.set(key, post.id); return url.href; }',
     'export function route(post) { const routeKeys = { post: "id" }; const url = new URL(location.href); url.searchParams.set(routeKeys.post, post.id); return url.href; }',
@@ -355,14 +359,17 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route(post) { const WindowParams = window.URLSearchParams; const params = new WindowParams({ id: post.id }); return "?" + params; }',
     'export function route(post) { const Params = globalThis.URLSearchParams; const params = new Params({ id: post.id }); return "?" + params; }',
     'export function route(post) { const { URLSearchParams: Params } = window; const params = new Params({ id: post.id }); return "?" + params; }',
+    'export function route(post) { const params = new URLSearchParams([["i" + "d", post.id]]); return "?" + params; }',
     'export function route(post) { const params = enabled ? new URLSearchParams({ id: post.id }) : new URLSearchParams(); return "?" + params; }',
     'export function route(post) { const url = new URL(location.href); const params = url.searchParams; params.set("id", post.id); return url.href; }',
+    'export function route(post) { const url = new URL(location.href); const prop = "searchParams"; url[prop].set("id", post.id); return url.href; }',
     'export function route(post) { const url = new URL(location.href); url.searchParams.delete("id"); return url.href; }',
     'export function route(post) { const url = new URL(location.href); url.searchParams.set.call(url.searchParams, "id", post.id); return url.href; }',
     'export function route(post) { const url = new URL(location.href); url.searchParams.set.apply(url.searchParams, ["id", post.id]); return url.href; }',
     'export function route(post) { const url = new URL(location.href); url.searchParams.set?.call(url.searchParams, "id", post.id); return url.href; }',
     'export function route(post) { const url = new URL(location.href); url.searchParams.set?.apply(url.searchParams, ["id", post.id]); return url.href; }',
     'export function route(post) { const url = new URL(location.href); const remove = url.searchParams.delete.bind(url.searchParams); remove("id"); return url.href; }',
+    'export function route(post) { const params = new URLSearchParams(); const set = params.set; set.call(params, "id", post.id); return "?" + params; }',
     'export function route(post) { const key = "tab"; const url = new URL(location.href); let params; params = url.searchParams; params.append(key, "posts"); return url.href; }',
     'export function route(post) { const url = new URL(location.href); const params = (url.searchParams); params.set("id", post.id); return url.href; }',
     'export function route(post) { const url = new URL(location.href); const { searchParams } = url; searchParams.set("id", post.id); return url.href; }',
@@ -390,12 +397,16 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route(post) { const key = "id"; const url = new URL(location.href); url.search = key + "=" + post.id; return url.href; }',
     'export function route(post) { const key = "id"; const url = new URL(location.href); url.search = key +\n  "=" + post.id; return url.href; }',
     'export function route(post) { const url = new URL(location.href); url.search = new URLSearchParams({ id: post.id }); return url.href; }',
+    'export function route(post) { new URL(location.href).search = "id=" + post.id; }',
+    'export function route(post) { new URL(location.href)["search"] = "id=" + post.id; }',
     'export function route(post) { state.url = new URL(location.href); state.url.searchParams.set("id", post.id); return state.url.href; }',
     'export function route(post) { function currentUrl() { return new URL(location.href); } const url = currentUrl(); url.searchParams.set("id", post.id); return url.href; }',
     'export function route(post) { const currentUrl = function() { return new URL(location.href); }; const url = currentUrl(); url.searchParams.set("id", post.id); return url.href; }',
     'export function route(post) { const currentUrl = _ => new URL(location.href); const url = currentUrl(); url.searchParams.set("id", post.id); return url.href; }',
+    'export function route(post) { function currentUrl() { return new URL(location.href); } currentUrl().searchParams.set("id", post.id); }',
     'export function route(post) { const helper = { mutate: (url) => { url.searchParams.set("id", post.id); return url.href; } }; return helper.mutate(new URL(location.href)); }',
     'export function route(post) { const helper = { mutate: function(url) { url.searchParams.set("id", post.id); return url.href; } }; return helper.mutate(new URL(location.href)); }',
+    'export function route(post) { const helper = { routes: { mutate(url) { url.searchParams.set("id", post.id); return url.href; } } }; return helper.routes.mutate(new URL(location.href)); }',
     'export function route(post) { let endpoint = "https://api.example.test/product"; endpoint = location.href; const url = new URL(endpoint); url.searchParams.set("id", post.id); return url.href; }',
     'export function route(post) { state.params = new URLSearchParams({ id: post.id }); return "?" + state.params; }'
   ];
@@ -411,6 +422,68 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'import routeKey from "./config.js"; export function route(post) { const url = new URL(location.href); url.searchParams.set(routeKey, post.id); return url.href; }',
     'modules/interactions.js',
     { 'modules/config.js': 'export default "\\u0069d";\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { makeUrl } from "./url.js"; export function route(post) { const url = makeUrl(); url.searchParams.set("id", post.id); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export function makeUrl() { return new URL(location.href); }\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import makeUrl from "./url.js"; export function route(post) { const url = makeUrl(); url.searchParams.set("id", post.id); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export default function makeUrl() { return new URL(location.href); }\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import makeUrl from "./url.js"; export function route(post) { const url = makeUrl(); url.searchParams.set("id", post.id); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export default (function makeUrl() { return new URL(location.href); });\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import makeUrl from "./url.js"; export function route(post) { const url = makeUrl(); url.searchParams.set("id", post.id); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export default (() => new URL(location.href));\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import makeUrl from "./url.js"; export function route(post) { makeUrl().searchParams.set("id", post.id); }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'const makeUrl = () => new URL(location.href); export { makeUrl as default };\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { makeUrl } from "./url.js"; export function route(post) { makeUrl().searchParams.set("id", post.id); }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export function makeUrl() { const marker = "function fake() {"; return new URL(location.href); }\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { makeProductUrl } from "./url.js"; export function route(post) { const url = makeProductUrl(location.href); url.searchParams.set("id", post.id); return url.href; }',
+    'modules/interactions.js',
+    {
+      'modules/config.js': 'export const externalRoot = "https://api.example.test";\n',
+      'modules/url.js': 'import { externalRoot } from "./config.js"; export function makeProductUrl(externalRoot) { return new URL("/product", externalRoot); }\n'
+    }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { makeProductUrl } from "./url.js"; export function route(post) { const url = makeProductUrl(); url.searchParams.set("id", post.id); return url.href; }',
+    'modules/interactions.js',
+    {
+      'modules/config.js': 'export const externalRoot = "https://api.example.test";\n',
+      'modules/url.js': 'import { externalRoot } from "./config.js"; export function makeProductUrl() { const marker = "{"; const externalRoot = location.href; return new URL("/product", externalRoot); }\n'
+    }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { makeProductUrl } from "./url.js"; export function route(post) { const url = makeProductUrl(); url.searchParams.set("id", post.id); return url.href; }',
+    'modules/interactions.js',
+    {
+      'modules/config.js': 'export const externalRoot = "https://api.example.test";\n',
+      'modules/url.js': 'import { externalRoot } from "./config.js"; export function makeProductUrl() { if (ok) { const externalRoot = location.href; return new URL("/product", externalRoot); } return new URL("/fallback", "https://api.example.test"); }\n'
+    }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { makeProductUrl } from "./url.js"; export function route(post) { const url = makeProductUrl(); url.searchParams.set("id", post.id); return url.href; }',
+    'modules/interactions.js',
+    {
+      'modules/config.js': 'export const externalRoot = "https://api.example.test";\n',
+      'modules/url.js': 'import { externalRoot } from "./config.js"; export function makeProductUrl() { const [externalRoot] = [location.href]; return new URL("/product", externalRoot); }\n'
+    }
   );
   await assertV4PackagedSourceRejected(
     'import * as config from "./config.js"; export function route(post) { const url = new URL(location.href); url.searchParams.set(config.key, post.id); return url.href; }',
@@ -557,6 +630,9 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } return mutate?.(new URL(location.href)); }'
   );
   await assertV4PackagedSourceRejected(
+    'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } mutate?.call(null, new URL(location.href)); mutate?.apply(null, [new URL(location.href)]); }'
+  );
+  await assertV4PackagedSourceRejected(
     'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } return mutate["call"](null, new URL(location.href)); }'
   );
   await assertV4PackagedSourceRejected(
@@ -680,11 +756,31 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
     const localExportBarrelSource = 'import { endpoint } from "./config.js"; export { endpoint };\n';
     const starBarrelSource = 'export * from "./config.js";\n';
     const importedSource = 'import defaultEndpoint, { endpoint, productPath, externalRoot } from "./config.js"; import { endpoint as barrelEndpoint } from "./barrel.js"; import { endpoint as localExportEndpoint } from "./local-export-barrel.js"; import { endpoint as starEndpoint } from "./star-barrel.js"; export function imported() { const url = new URL(endpoint); url.searchParams.set("id", "sku-123"); const url2 = new URL(productPath, externalRoot); url2.searchParams.set("id", "sku-123"); const url3 = new URL(barrelEndpoint); url3.searchParams.set("id", "sku-123"); const url4 = new URL(localExportEndpoint); url4.searchParams.set("id", "sku-123"); const url5 = new URL(starEndpoint); url5.searchParams.set("id", "sku-123"); const importedTemplateUrl = `${endpoint}?id=sku-123`; const qs = "id=" + "sku-123"; const importedTemplateAliasUrl = `${endpoint}?${qs}`; const importedConcatAliasUrl = endpoint + "?" + qs; const defaultTemplateAliasUrl = `${defaultEndpoint}?${qs}`; return [url.href, url2.href, url3.href, url4.href, url5.href, importedTemplateUrl, importedTemplateAliasUrl, importedConcatAliasUrl, defaultTemplateAliasUrl]; }\n';
+    const externalFactorySource = 'import { externalRoot } from "./config.js"; export function makeProductUrl() { return new URL("/product", externalRoot); }\n';
+    const externalFactoryUserSource = 'import { makeProductUrl } from "./external-factory.js"; export function useFactory() { const url = makeProductUrl(); url.searchParams.set("id", "sku-123"); return url.href; }\n';
+    const externalFactorySiblingShadowSource = 'import { externalRoot } from "./config.js"; export function makeProductUrlWithSiblingShadow() { if (ok) { const externalRoot = location.href; void externalRoot; } return new URL("/product", externalRoot); }\n';
+    const externalFactorySiblingShadowUserSource = 'import { makeProductUrlWithSiblingShadow } from "./external-factory-sibling-shadow.js"; export function useFactory() { const url = makeProductUrlWithSiblingShadow(); url.searchParams.set("id", "sku-123"); return url.href; }\n';
+    const externalFactoryNestedVarSource = 'import { externalRoot } from "./config.js"; export function makeProductUrlWithNestedVar() { function helper() { var externalRoot = location.href; return externalRoot; } void helper; return new URL("/product", externalRoot); }\n';
+    const externalFactoryNestedVarUserSource = 'import { makeProductUrlWithNestedVar } from "./external-factory-nested-var.js"; export function useFactory() { const url = makeProductUrlWithNestedVar(); url.searchParams.set("id", "sku-123"); return url.href; }\n';
+    const externalFactoryFakeDeclarationSource = 'import { externalRoot } from "./config.js"; export function makeProductUrlWithFakeDeclaration() { const marker = "const externalRoot = x"; return new URL("/product", externalRoot); }\n';
+    const externalFactoryFakeDeclarationUserSource = 'import { makeProductUrlWithFakeDeclaration } from "./external-factory-fake-declaration.js"; export function useFactory() { const url = makeProductUrlWithFakeDeclaration(); url.searchParams.set("id", "sku-123"); return url.href; }\n';
+    const externalFactoryNestedImportedNameSource = 'export function makeProductUrl() { return new URL("/product", "https://api.example.test"); }\n';
+    const externalFactoryNestedImportedNameUserSource = 'import { makeProductUrl } from "./external-factory-nested-imported-name.js"; export function useFactory() { function setup() { function makeProductUrl() { return new URL(location.href); } void makeProductUrl; } void setup; const url = makeProductUrl(); url.searchParams.set("id", "sku-123"); return url.href; }\n';
     await writeFile(path.join(fixtureThemeDir, 'modules', 'config.js'), configSource);
     await writeFile(path.join(fixtureThemeDir, 'modules', 'barrel.js'), barrelSource);
     await writeFile(path.join(fixtureThemeDir, 'modules', 'local-export-barrel.js'), localExportBarrelSource);
     await writeFile(path.join(fixtureThemeDir, 'modules', 'star-barrel.js'), starBarrelSource);
     await writeFile(path.join(fixtureThemeDir, 'modules', 'imported.js'), importedSource);
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'external-factory.js'), externalFactorySource);
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'external-factory-user.js'), externalFactoryUserSource);
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'external-factory-sibling-shadow.js'), externalFactorySiblingShadowSource);
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'external-factory-sibling-shadow-user.js'), externalFactorySiblingShadowUserSource);
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'external-factory-nested-var.js'), externalFactoryNestedVarSource);
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'external-factory-nested-var-user.js'), externalFactoryNestedVarUserSource);
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'external-factory-fake-declaration.js'), externalFactoryFakeDeclarationSource);
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'external-factory-fake-declaration-user.js'), externalFactoryFakeDeclarationUserSource);
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'external-factory-nested-imported-name.js'), externalFactoryNestedImportedNameSource);
+    await writeFile(path.join(fixtureThemeDir, 'modules', 'external-factory-nested-imported-name-user.js'), externalFactoryNestedImportedNameUserSource);
     const zipPath = await createThemeZip(tempDir, 'arcus', {
       themeJson: theme,
       extraFiles: {
@@ -693,6 +789,16 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
         'modules/local-export-barrel.js': localExportBarrelSource,
         'modules/star-barrel.js': starBarrelSource,
         'modules/imported.js': importedSource,
+        'modules/external-factory.js': externalFactorySource,
+        'modules/external-factory-user.js': externalFactoryUserSource,
+        'modules/external-factory-sibling-shadow.js': externalFactorySiblingShadowSource,
+        'modules/external-factory-sibling-shadow-user.js': externalFactorySiblingShadowUserSource,
+        'modules/external-factory-nested-var.js': externalFactoryNestedVarSource,
+        'modules/external-factory-nested-var-user.js': externalFactoryNestedVarUserSource,
+        'modules/external-factory-fake-declaration.js': externalFactoryFakeDeclarationSource,
+        'modules/external-factory-fake-declaration-user.js': externalFactoryFakeDeclarationUserSource,
+        'modules/external-factory-nested-imported-name.js': externalFactoryNestedImportedNameSource,
+        'modules/external-factory-nested-imported-name-user.js': externalFactoryNestedImportedNameUserSource,
         'modules/layout.js': [
           '// old route literal fixture: "?id=post.md"',
           'export function mount() {',
@@ -766,6 +872,16 @@ test('verifyCatalog allows v4 ZIP packaged source with external query strings', 
     release.files = [
       'modules/barrel.js',
       'modules/config.js',
+      'modules/external-factory.js',
+      'modules/external-factory-fake-declaration.js',
+      'modules/external-factory-fake-declaration-user.js',
+      'modules/external-factory-nested-var.js',
+      'modules/external-factory-nested-var-user.js',
+      'modules/external-factory-nested-imported-name.js',
+      'modules/external-factory-nested-imported-name-user.js',
+      'modules/external-factory-sibling-shadow.js',
+      'modules/external-factory-sibling-shadow-user.js',
+      'modules/external-factory-user.js',
       'modules/imported.js',
       'modules/local-export-barrel.js',
       'modules/layout.js',
@@ -803,11 +919,77 @@ test('verifyCatalog avoids v4 simple helper false positives on object methods', 
   await assertV4PackagedSourceAccepted(
     'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } const helper = { mutate(url) { return url.href; } }; return helper.mutate(new URL(location.href)); }'
   );
+  await assertV4PackagedSourceAccepted(
+    'export function route() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } const helper = { mutate(url) { return url.href; } }; return helper . mutate(new URL(location.href)) || helper ?. mutate(new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceAccepted(
+    'function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } export function route() { function mutate(url) { return url.href; } const helper = { mutate }; return helper.mutate(new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceAccepted(
+    'export function route() { const helper = { routes: { mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } }, mutate(url) { return url.href; } }; return helper.mutate(new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route() { const helper = { marker: /{/, routes: { mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } } }; return helper.routes.mutate(new URL(location.href)); }'
+  );
 });
 
 test('verifyCatalog allows external URL object member aliases', async () => {
   await assertV4PackagedSourceAccepted(
     'export function route(sku) { const endpoints = { product: "https://api.example.test/product" }; const url = new URL(endpoints.product); url.searchParams.set("id", sku); return url.href; }'
+  );
+});
+
+test('verifyCatalog rejects v4 returned route URL factories and default object helpers', async () => {
+  await assertV4PackagedSourceRejected(
+    'export function route(post) { function makeUrl() { const url = new URL(location.href); return url; } makeUrl().searchParams.set("id", post.location); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export async function route(post) { async function makeUrl() { return new URL(location.href); } const url = await makeUrl(); url.searchParams.set("id", post.location); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'import { makeUrl } from "./url.js"; export function route(post) { makeUrl().searchParams.set("id", post.location); }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export function makeUrl() { const url = new URL(location.href); return url; }\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'export default { makeUrl() { return new URL(location.href); }, mount(post) { this.makeUrl().searchParams.set("id", post.location); } };'
+  );
+  await assertV4PackagedSourceRejected(
+    'const theme = { makeUrl() { return new URL(location.href); }, mount(post) { this.makeUrl().searchParams.set("id", post.location); }, views: {}, components: {}, effects: {} }; export default theme;'
+  );
+  await assertV4PackagedSourceRejected(
+    'const theme = { makeUrl() { return new URL(location.href); }, mount(post) { this.makeUrl().searchParams.set("id", post.location); }, views: {}, components: {}, effects: {} }; export { theme as default };'
+  );
+});
+
+test('verifyCatalog rejects v4 computed route URL property access', async () => {
+  await assertV4PackagedSourceRejected(
+    'export function route(post) { const url = new URL(location.href); url["search" + "Params"].set("id", post.location); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route(post) { function makeUrl() { return new URL(location.href); } makeUrl()["search" + "Params"].set("id", post.location); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route(post) { const url = new URL(location.href); url.searchParams["se" + "t"]("id", post.location); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route(post) { const method = "set"; const url = new URL(location.href); url.searchParams[method]("id", post.location); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route(post) { location["se" + "arch"] = "id=" + post.location; }'
+  );
+});
+
+test('verifyCatalog avoids imported route-key alias shadow false positives', async () => {
+  await assertV4PackagedSourceAccepted(
+    'import { key } from "./config.js"; export function route(post) { const key = "sku"; const url = new URL(location.href); url.searchParams.set(key, post.location); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const key = "id";\n' }
+  );
+  await assertV4PackagedSourceAccepted(
+    'import { key } from "./config.js"; export function route(key, post) { const url = new URL(location.href); url.searchParams.set(key, post.location); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const key = "id";\n' }
   );
 });
 
@@ -824,6 +1006,225 @@ test('verifyCatalog keeps imported endpoint aliases available after nested same-
     'import { endpoint } from "./config.js"; function preview(endpoint) { return new URL(endpoint).href; } export function route() { const url = new URL(endpoint); url.searchParams.set("id", sku); return url.href; }',
     'modules/interactions.js',
     { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+});
+
+test('verifyCatalog rejects active nested same-name route factories', async () => {
+  await assertV4PackagedSourceRejected(
+    'import { makeProductUrl } from "./url.js"; export function mount() { function setup(post) { function makeProductUrl() { return new URL(location.href); } makeProductUrl().searchParams.set("id", post.id); } return setup; }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export function makeProductUrl() { return new URL("/product", "https://api.example.test"); }\n' }
+  );
+});
+
+test('verifyCatalog avoids nested route factory sibling leakage', async () => {
+  await assertV4PackagedSourceAccepted(
+    'export function mount() { function setup() { function makeUrl() { return new URL(location.href); } void makeUrl; } function route() { const makeUrl = () => new URL("https://api.example.test/product"); const url = makeUrl(); url.searchParams.set("id", sku); return url.href; } return { setup, route }; }'
+  );
+});
+
+test('verifyCatalog rejects scoped route factory member assignment', async () => {
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } state.url = makeUrl(); state.url.searchParams.set("id", post.id); return state.url.href; }'
+  );
+});
+
+test('verifyCatalog avoids descendant same-name route factory false positives', async () => {
+  await assertV4PackagedSourceAccepted(
+    'export function mount() { function makeUrl() { return new URL(location.href); } function inner() { function makeUrl() { return new URL("https://api.example.test/product"); } const url = makeUrl(); url.searchParams.set("id", sku); return url.href; } return inner; }'
+  );
+  await assertV4PackagedSourceAccepted(
+    'export function mount() { function makeUrl() { return new URL(location.href); } function inner() { function makeUrl() { return new URL("https://api.example.test/product"); } makeUrl().search = "id=" + sku; } return inner; }'
+  );
+});
+
+test('verifyCatalog rejects single-param block arrow route factories', async () => {
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { const makeUrl = base => { return new URL(location.href); }; makeUrl(location.href).searchParams.set("id", post.id); }'
+  );
+});
+
+test('verifyCatalog rejects var-hoisted scoped route factory shadows', async () => {
+  await assertV4PackagedSourceRejected(
+    'import { makeProductUrl } from "./url.js"; export function mount(post) { if (post) { var makeProductUrl = () => new URL(location.href); } makeProductUrl().searchParams.set("id", post.id); }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export function makeProductUrl() { return new URL("/product", "https://api.example.test"); }\n' }
+  );
+});
+
+test('verifyCatalog rejects scoped route factory nested call args', async () => {
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl(base) { return new URL(location.href); } makeUrl(getBase()).searchParams.set("id", post.id); }'
+  );
+});
+
+test('verifyCatalog rejects scoped route factory searchParams aliases', async () => {
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } const params = makeUrl().searchParams; params.set("id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } const params = (makeUrl()).searchParams; params.set("id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } const { searchParams } = (makeUrl()); searchParams.set("id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } const { ["searchParams"]: params } = makeUrl(); params.set("id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } const url = makeUrl(); const { searchParams = new URLSearchParams() } = url; searchParams.set("id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } const { searchParams = new URLSearchParams() } = makeUrl(); searchParams.set("id", post.id); }'
+  );
+});
+
+test('verifyCatalog rejects scoped route factory searchParams dispatch', async () => {
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } makeUrl().searchParams.set.call(makeUrl().searchParams, "id", post.id); makeUrl().searchParams.set.apply(makeUrl().searchParams, ["tab", "posts"]); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } makeUrl().searchParams.set.call(getTarget(a, b), "id", post.id); makeUrl().searchParams.set.apply(getTarget(a, b), ["tab", "posts"]); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } makeUrl().searchParams.set?.call(getTarget(a, b), "id", post.id); makeUrl().searchParams.set?.apply(getTarget(a, b), ["tab", "posts"]); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } (makeUrl)().searchParams.set("id", post.id); ((makeUrl))().search = "tab=posts"; }'
+  );
+});
+
+test('verifyCatalog rejects inline new URL searchParams dispatch with comma receivers', async () => {
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { new URL(location.href).searchParams.set.call(getTarget(a, b), "id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { const url = new URL(location.href); url.searchParams.set.call(getTarget(a, b), "id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { const url = new URL(location.href); url.searchParams.set["call"](url.searchParams, "id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { new URL(location.href).searchParams.set?.call(getTarget(a, b), "id", post.id); }'
+  );
+});
+
+test('verifyCatalog rejects scoped route factory bracket member assignments', async () => {
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } state["url"] = makeUrl(); state["url"].searchParams.set("id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { state["url"] = new URL(location.href); state["url"].searchParams.set("id", post.id); }'
+  );
+});
+
+test('verifyCatalog rejects imported route factory parenthesized callees', async () => {
+  await assertV4PackagedSourceRejected(
+    'import { makeUrl } from "./url.js"; export function mount(post) { (makeUrl)().searchParams.set("id", post.id); }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export function makeUrl() { return new URL(location.href); }\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { makeUrl } from "./url.js"; export function mount(post) { const routeFactory = makeUrl; routeFactory().searchParams.set("id", post.id); }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export function makeUrl() { return new URL(location.href); }\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { makeUrl } from "./url.js"; export function mount(post) { helper.routeFactory = makeUrl; helper.routeFactory().searchParams.set("id", post.id); }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export function makeUrl() { return new URL(location.href); }\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { makeUrl } from "./url.js"; export function mount(post) { const helper = { makeUrl }; helper.makeUrl().searchParams.set("id", post.id); }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export function makeUrl() { return new URL(location.href); }\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { makeUrl } from "./url.js"; export function mount(post) { const helper = { "routeFactory": makeUrl }; helper.routeFactory().searchParams.set("id", post.id); }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export function makeUrl() { return new URL(location.href); }\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { makeUrl } from "./url.js"; export function mount(post) { const helper = { makeUrl }; const { makeUrl: routeFactory } = helper; routeFactory().searchParams.set("id", post.id); }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export function makeUrl() { return new URL(location.href); }\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { makeUrl } from "./url.js"; export function mount(post) { state["url"] = makeUrl(); state["url"].searchParams.set("id", post.id); }',
+    'modules/interactions.js',
+    { 'modules/url.js': 'export function makeUrl() { return new URL(location.href); }\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } makeUrl.call(null).searchParams.set("id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { function makeUrl() { return new URL(location.href); } const url = makeUrl.apply(null, []); url.searchParams.set("id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { const helper = { makeUrl() { return new URL(location.href); } }; helper.makeUrl().searchParams.set("id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { const helper = { "makeUrl"() { return new URL(location.href); } }; helper.makeUrl().searchParams.set("id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { const helper = { ["makeUrl"]() { return new URL(location.href); } }; helper.makeUrl().searchParams.set("id", post.id); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { const helper = { makeUrl() { return new URL(location.href); } }; const key = "makeUrl"; helper[key]().searchParams.set("id", post.id); }'
+  );
+});
+
+test('verifyCatalog rejects destructured URL.searchParams mutator aliases', async () => {
+  await assertV4PackagedSourceRejected(
+    'export function mount() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } const helper = { mutate }; return helper.mutate(new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount() { function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } const helper = { "routeMutator": mutate }; return helper.routeMutator(new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { const url = new URL(location.href); const { ["searchParams"]: params } = url; params.set("id", post.id); return url.href; }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { const { ["searchParams"]: params } = new URL(location.href); params.set("id", post.id); return "?" + params; }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { const url = new URL(location.href); const { set } = url.searchParams; set.call(url.searchParams, "id", post.id); return url.href; }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { const url = new URL(location.href); const { set } = url.searchParams; set["call"](getTarget(a, b), "id", post.id); return url.href; }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount(post) { const url = new URL(location.href); const { ["append"]: appendParam } = url.searchParams; appendParam("tab", "posts"); return url.href; }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount() { const helper = { "mutate": (url) => { url.searchParams.set("id", "post.md"); return url.href; } }; return helper.mutate(new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount() { const helper = { ["mutate"](url) { url.searchParams.set("id", "post.md"); return url.href; } }; return helper.mutate(new URL(location.href)); }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function mount() { const helper = { mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } }; const key = "mutate"; return helper[key](new URL(location.href)); }'
+  );
+});
+
+test('verifyCatalog avoids same-name object method route factory false positives', async () => {
+  await assertV4PackagedSourceAccepted(
+    'export function mount() { function makeUrl() { return new URL(location.href); } const helper = { makeUrl() { return new URL("https://api.example.test/product"); } }; helper.makeUrl().searchParams.set("id", sku); }'
+  );
+  await assertV4PackagedSourceAccepted(
+    'export function mount() { function makeUrl() { return new URL(location.href); } const helper = { makeUrl() { return new URL("https://api.example.test/product"); } }; helper . makeUrl().searchParams.set("id", sku); helper ?. makeUrl().searchParams.set("tab", "posts"); }'
+  );
+  await assertV4PackagedSourceAccepted(
+    'function makeUrl() { return new URL(location.href); } export function mount() { function makeUrl() { return new URL("https://api.example.test/product"); } const routeFactory = makeUrl; routeFactory().searchParams.set("id", sku); }'
+  );
+  await assertV4PackagedSourceAccepted(
+    'function makeUrl() { return new URL(location.href); } export function mount() { function makeUrl() { return new URL("https://api.example.test/product"); } const helper = {}; helper.routeFactory = makeUrl; helper.routeFactory().searchParams.set("id", sku); }'
+  );
+  await assertV4PackagedSourceAccepted(
+    'function makeUrl() { return new URL(location.href); } const helper = {}; const marker = "helper.routeFactory = makeUrl"; helper.routeFactory = () => new URL("https://api.example.test/product"); export function mount() { helper.routeFactory().searchParams.set("id", sku); }'
+  );
+  await assertV4PackagedSourceAccepted(
+    'function mutate(url) { url.searchParams.set("id", "post.md"); return url.href; } const helper = { mutate }; export function mount() { const helper = { mutate: (url) => url.href }; const { mutate: routeMutator } = helper; return routeMutator(new URL(location.href)); }'
   );
 });
 
@@ -860,6 +1261,11 @@ test('verifyCatalog rejects shadowing masked by nested external helpers', async 
 test('verifyCatalog rejects destructured external endpoint shadows', async () => {
   await assertV4PackagedSourceRejected(
     'import { endpoint } from "./config.js"; export function route([endpoint], post) { const url = new URL(endpoint); url.searchParams.set("id", post.location); return url.href; }',
+    'modules/interactions.js',
+    { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { endpoint } from "./config.js"; export function route(post) { const [endpoint] = [location.href]; const url = new URL(endpoint); url.searchParams.set("id", post.location); return url.href; }',
     'modules/interactions.js',
     { 'modules/config.js': 'export const endpoint = "https://api.example.test/product";\n' }
   );
