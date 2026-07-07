@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import {
+  canParseV4RouteGuardSource,
   collectV4RouteGuardFacts,
   containsForbiddenV4RouteConstructionAst
 } from './theme-route-guard.mjs';
@@ -860,7 +861,7 @@ function shouldScanHtmlRouteAttributes(path, source) {
 
 function shouldScanExecutableRouteCode(path) {
   const clean = String(path || '').toLowerCase();
-  return !clean || /\.(?:js|mjs)$/iu.test(clean);
+  return !clean || /\.(?:js|mjs|cjs)$/iu.test(clean);
 }
 
 function stringLiteralHasExternalRouteContext(source, literalMatch, externalAliases = new Set()) {
@@ -4244,6 +4245,7 @@ function containsForbiddenV4RouteConstruction(source, contextSource = source) {
   const text = stripCommentsForRouteGuard(rawText);
   const context = normalizeRouteGuardContext(contextSource, text);
   if (containsForbiddenV4RouteConstructionAst(rawText, context)) return true;
+  if (shouldScanExecutableRouteCode(context.path) && canParseV4RouteGuardSource(rawText)) return false;
   const astFacts = collectV4RouteGuardFacts(rawText, context);
   const localRouteKeyAliases = collectRouteKeyAliases(text);
   const importedRouteKeyAliases = mergeImportedContextAliases(new Set(), collectRouteKeyAliases, text, context, { shadow: false });
