@@ -340,6 +340,12 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route(post) { return "?" + ("id=" + post.id); }',
     'export function route(post) { return "?" + ("i" + "d" + "=" + post.id); }',
     'export function route(post) { const params = new URLSearchParams({ id: post.id }); return "?" + params; }',
+    'export function route(post) { const route = { id: post.id }; const params = new URLSearchParams(route); location.search = params; }',
+    'export function route(post) { let route; route = { tab: "posts" }; const params = new URLSearchParams(route); return "?" + params; }',
+    'export function route(post) { const routeKey = "id"; const route = { [routeKey]: post.id }; const params = new URLSearchParams(route); return "?" + params; }',
+    'export function route(post) { const route = { id: post.id }; const params = new URLSearchParams(Object.entries(route)); return "?" + params; }',
+    'export function route(post) { const route = { id: post.id }; const params = new URLSearchParams([...Object.entries(route)]); return "?" + params; }',
+    'export function route(post) { const routePairs = [["id", post.id]]; const params = new URLSearchParams(new Map(routePairs)); return "?" + params; }',
     'export function route(post) { let params; params = new URLSearchParams({ id: post.id }); return "?" + params; }',
     'export function route(post) { const params = new URLSearchParams([["i" + "d", post.id]]); return "?" + params; }',
     'export function route(post) { const url = new URL(location.href); url.searchParams.set("id", post.id); return url.href; }',
@@ -354,6 +360,10 @@ test('verifyCatalog rejects isolated v4 route-key alias public route builders', 
     'export function route(post) { const qs = "id=" + post.id; location.search = qs; }',
     'export function route(post) { window.location["search"] = "id=" + post.id; }',
     'export function route(post) { const key = "id"; const url = new URL(location.href); url.search = key + "=" + post.id; return url.href; }',
+    'export function route(post) { const url = new URL(location.href); const params = new URLSearchParams({ id: post.id }); url.search = "?" + params; return url.href; }',
+    'export function route(post) { const loc = location; loc.search = "?id=" + post.id; }',
+    'export function route(post) { const { location: loc } = window; loc.search = "?id=" + post.id; }',
+    'export function route(link, post) { link.search = "?id=" + post.id; }',
     'export function route(post) { new URL(location.href)["search"] = "id=" + post.id; }',
     'export function route(post) { state.url = new URL(location.href); state.url.searchParams.set("id", post.id); return state.url.href; }',
     'export function route(post) { function currentUrl() { return new URL(location.href); } currentUrl().searchParams.set("id", post.id); }',
@@ -594,6 +604,12 @@ test('verifyCatalog allows v4 executable source with external route-shaped queri
   );
   await assertV4PackagedSourceAccepted(
     'export function route() { return new URL("?tab=posts", new URL("https://api.example.test/product")).href; }'
+  );
+  await assertV4PackagedSourceAccepted(
+    'export function route(sku) { const externalBase = "https://api.example.test/product"; const route = { id: sku }; const params = new URLSearchParams(route); return externalBase + "?" + params; }'
+  );
+  await assertV4PackagedSourceAccepted(
+    'export function route(sku) { const external = new URL("https://api.example.test/product"); const route = { id: sku }; const params = new URLSearchParams(route); external.search = "?" + params; return external.href; }'
   );
 });
 
