@@ -7,6 +7,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import {
+  collectV4RouteGuardFacts,
+  containsForbiddenV4RouteConstructionAst
+} from './theme-route-guard.mjs';
 
 const DEFAULT_PRESS_RELEASE_URL = 'https://raw.githubusercontent.com/EkilyHQ/Press/release-artifacts/system-release.json';
 const DEFAULT_OWNER = 'EkilyHQ';
@@ -383,7 +387,7 @@ async function inspectZip(bytes, expectedRoot, options = {}) {
 function shouldScanForPublicRouteLiterals(file) {
   const normalized = stringValue(file).toLowerCase();
   if (!normalized || normalized === 'theme.json') return false;
-  return /\.(?:html?|js|mjs|svg)$/u.test(normalized);
+  return /\.(?:html?|js|mjs|cjs|svg)$/u.test(normalized);
 }
 
 function isExternalUrlPrefix(value) {
@@ -1659,6 +1663,7 @@ function collectContextFileAliases(file, collector, context, seen = new Set(), c
   const collectFileAliases = () => {
     if (collector === collectRouteUrlFactoryAliases) {
       const fileContext = { ...context, path: file.path };
+      const astFacts = collectV4RouteGuardFacts(file.source, fileContext);
       const externalAliases = mergeImportedContextAliases(
         collectExternalUrlAliases(file.source),
         collectExternalUrlAliases,
@@ -1673,7 +1678,7 @@ function collectContextFileAliases(file, collector, context, seen = new Set(), c
         fileContext,
         { shadow: false }
       );
-      return collector(file.source, externalAliases, staticRelativeAliases);
+      return collector(file.source, new Set([...externalAliases, ...astFacts.externalAliases]), staticRelativeAliases);
     }
     return collector(file.source);
   };
@@ -4238,18 +4243,20 @@ function containsForbiddenV4RouteConstruction(source, contextSource = source) {
   const rawText = String(source || '');
   const text = stripCommentsForRouteGuard(rawText);
   const context = normalizeRouteGuardContext(contextSource, text);
+  if (containsForbiddenV4RouteConstructionAst(rawText, context)) return true;
+  const astFacts = collectV4RouteGuardFacts(rawText, context);
   const localRouteKeyAliases = collectRouteKeyAliases(text);
   const importedRouteKeyAliases = mergeImportedContextAliases(new Set(), collectRouteKeyAliases, text, context, { shadow: false });
-  const aliases = new Set([...localRouteKeyAliases, ...importedRouteKeyAliases]);
+  const aliases = new Set([...localRouteKeyAliases, ...importedRouteKeyAliases, ...astFacts.routeKeyAliases]);
   aliases.localAliases = localRouteKeyAliases;
   aliases.importedAliases = importedRouteKeyAliases;
   const localExternalAliases = collectExternalUrlAliases(text);
   const importedExternalAliases = mergeImportedContextAliases(new Set(), collectExternalUrlAliases, text, context, { shadow: false });
-  const externalAliases = new Set([...localExternalAliases, ...importedExternalAliases]);
+  const externalAliases = new Set([...localExternalAliases, ...importedExternalAliases, ...astFacts.externalAliases]);
   const staticRelativeAliases = mergeImportedContextAliases(collectStaticRelativeUrlAliases(text), collectStaticRelativeUrlAliases, text, context, { shadow: false });
   const localRouteUrlFactoryAliases = collectRouteUrlFactoryAliases(text, externalAliases, staticRelativeAliases);
   const importedRouteUrlFactoryAliases = mergeImportedContextAliases(new Set(), collectRouteUrlFactoryAliases, text, context, { shadow: false });
-  const routeUrlFactoryAliases = new Set([...localRouteUrlFactoryAliases, ...importedRouteUrlFactoryAliases]);
+  const routeUrlFactoryAliases = new Set([...localRouteUrlFactoryAliases, ...importedRouteUrlFactoryAliases, ...astFacts.routeUrlFactoryAliases]);
   const hasForbiddenCode = shouldScanExecutableRouteCode(context.path) && (
     containsForbiddenExecutableRouteCode(text, aliases, externalAliases, staticRelativeAliases, routeUrlFactoryAliases)
     || containsForbiddenShadowedExternalAliasRouteCode(text, aliases, externalAliases, externalAliases, staticRelativeAliases, routeUrlFactoryAliases)

@@ -993,6 +993,95 @@ test('verifyCatalog avoids imported route-key alias shadow false positives', asy
   );
 });
 
+test('verifyCatalog rejects defaulted route-key aliases', async () => {
+  await assertV4PackagedSourceRejected(
+    'export function route(post, postKey = "id") { const url = new URL(location.href); url.searchParams.set(postKey, post.location); return url.href; }'
+  );
+  await assertV4PackagedSourceRejected(
+    'export function route(post) { const [postKey = "id"] = []; const url = new URL(location.href); url.searchParams.set(postKey, post.location); return url.href; }'
+  );
+});
+
+test('verifyCatalog carries v4 route facts through ESM namespace re-exports', async () => {
+  await assertV4PackagedSourceRejected(
+    'import { cfg } from "./barrel.js"; export function route(post) { const url = new URL(location.href); url.searchParams.set(cfg.routeKeys.post, post.location); return url.href; }',
+    'modules/interactions.js',
+    {
+      'modules/config.js': 'export const routeKeys = { post: "id" };\n',
+      'modules/barrel.js': 'export * as cfg from "./config.js";\n'
+    }
+  );
+  await assertV4PackagedSourceRejected(
+    'import { cfg } from "./barrel.js"; export function route(post) { return "?" + cfg.routeKeys.post + "=" + post.location; }',
+    'modules/interactions.js',
+    {
+      'modules/config.js': 'export const routeKeys = { post: "id" };\n',
+      'modules/barrel.js': 'export * as cfg from "./config.js";\n'
+    }
+  );
+  await assertV4PackagedSourceAccepted(
+    'import { cfg } from "./barrel.js"; export function route() { const url = new URL(cfg.endpoints.product); url.searchParams.set("id", sku); return url.href; }',
+    'modules/interactions.js',
+    {
+      'modules/config.js': 'export const endpoints = { product: "https://api.example.test/product" };\n',
+      'modules/barrel.js': 'export * as cfg from "./config.js";\n'
+    }
+  );
+});
+
+test('verifyCatalog carries v4 route facts through CommonJS re-exports', async () => {
+  await assertV4PackagedSourceRejected(
+    'const cfg = require("./barrel.cjs"); exports.route = function route(post) { const url = new URL(location.href); url.searchParams.set(cfg.routeKeys.post, post.location); return url.href; };',
+    'modules/interactions.cjs',
+    {
+      'modules/config.cjs': 'exports.routeKeys = { post: "id" };\n',
+      'modules/barrel.cjs': 'module.exports = require("./config.cjs");\n'
+    }
+  );
+  await assertV4PackagedSourceRejected(
+    'const cfg = require("./config.cjs"); exports.route = function route(post) { const url = new URL(location.href); url.searchParams.set(cfg.routeKeys.post, post.location); return url.href; };',
+    'modules/interactions.cjs',
+    { 'modules/config.cjs': 'module.exports = { routeKeys: { post: "id" } };\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'const cfg = require("./config.cjs"); exports.route = function route(post) { return "?" + cfg.routeKeys.post + "=" + post.location; };',
+    'modules/interactions.cjs',
+    { 'modules/config.cjs': 'module.exports = { routeKeys: { post: "id" } };\n' }
+  );
+  await assertV4PackagedSourceRejected(
+    'const makeUrl = require("./url.cjs"); exports.route = function route(post) { makeUrl().searchParams.set("id", post.location); };',
+    'modules/interactions.cjs',
+    { 'modules/url.cjs': 'module.exports = function makeUrl() { return new URL(location.href); };\n' }
+  );
+  await assertV4PackagedSourceAccepted(
+    'const cfg = require("./barrel.cjs"); exports.route = function route() { const url = new URL(cfg.endpoints.product); url.searchParams.set("id", sku); return url.href; };',
+    'modules/interactions.cjs',
+    {
+      'modules/config.cjs': 'exports.endpoints = { product: "https://api.example.test/product" };\n',
+      'modules/barrel.cjs': 'module.exports = require("./config.cjs");\n'
+    }
+  );
+});
+
+test('verifyCatalog allows external URL factories and cyclic imports', async () => {
+  await assertV4PackagedSourceAccepted(
+    'import { makeProductUrl } from "./url.js"; export function route() { const url = makeProductUrl(); url.searchParams.set("id", sku); return url.href; }',
+    'modules/interactions.js',
+    {
+      'modules/config.js': 'export const endpoints = { product: "https://api.example.test/product" };\n',
+      'modules/url.js': 'import { endpoints } from "./config.js"; export function makeProductUrl() { return new URL(endpoints.product); }\n'
+    }
+  );
+  await assertV4PackagedSourceAccepted(
+    'import { endpoint } from "./a.js"; export function route() { const url = new URL(endpoint); url.searchParams.set("id", sku); return url.href; }',
+    'modules/interactions.js',
+    {
+      'modules/a.js': 'import { b } from "./b.js"; export const endpoint = "https://api.example.test/product"; void b;\n',
+      'modules/b.js': 'import { endpoint } from "./a.js"; export const b = endpoint;\n'
+    }
+  );
+});
+
 test('verifyCatalog avoids semicolonless expression-arrow shadow false positives', async () => {
   await assertV4PackagedSourceAccepted(
     'import { endpoint } from "./config.js"; const helper = endpoint => endpoint\nexport function route() { const url = new URL(endpoint); url.searchParams.set("id", sku); return url.href; }',
