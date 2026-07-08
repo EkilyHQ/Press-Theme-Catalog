@@ -8,7 +8,7 @@
     "verify": "node scripts/verify-catalog.mjs --catalog catalog.json --remote --verify-assets"
   },
   "dependencies": {
-    "@ekilyhq/press-theme-contract": "3.4.130"
+    "@ekilyhq/press-theme-contract": "3.4.131"
   },
   "engines": {
     "node": ">=22"
