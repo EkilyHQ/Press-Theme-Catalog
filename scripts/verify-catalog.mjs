@@ -7,11 +7,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import {
+  PRESS_THEME_CONTRACT,
+  validateThemeRouteHelperContract
+} from '@ekilyhq/press-theme-contract';
 
 const DEFAULT_PRESS_RELEASE_URL = 'https://raw.githubusercontent.com/EkilyHQ/Press/release-artifacts/system-release.json';
 const DEFAULT_OWNER = 'EkilyHQ';
-const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set([3]);
+const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set(PRESS_THEME_CONTRACT.supportedContractVersions);
 const THEME_CONTRACT_V3_MIN_PRESS_VERSION = '3.4.127';
+const THEME_CONTRACT_V4_MIN_PRESS_VERSION = '3.4.130';
+const THEME_SOURCE_EXTENSIONS = new Set(['.css', '.htm', '.html', '.js', '.mjs', '.cjs', '.svg']);
 
 export async function verifyCatalog(options = {}) {
   const catalogPath = options.catalogPath || path.resolve('catalog.json');
@@ -186,6 +192,9 @@ function validateThemeRelease(entry, release, context) {
   if (release.contractVersion === 3 && pressRange) {
     validateV3PressRange(slug, pressRange, context.failures);
   }
+  if (release.contractVersion === 4 && pressRange) {
+    validateV4PressRange(slug, pressRange, context.failures);
+  }
   if (!Array.isArray(release.files) || release.files.length === 0) {
     context.failures.push(`${slug}: release files must be a non-empty array`);
   } else {
@@ -197,6 +206,12 @@ function validateThemeRelease(entry, release, context) {
 function validateV3PressRange(slug, pressRange, failures) {
   if (semverRangeAllowsBefore(pressRange, THEME_CONTRACT_V3_MIN_PRESS_VERSION)) {
     failures.push(`${slug}: contract v3 engines.press must not accept Press versions before ${THEME_CONTRACT_V3_MIN_PRESS_VERSION}`);
+  }
+}
+
+function validateV4PressRange(slug, pressRange, failures) {
+  if (semverRangeAllowsBefore(pressRange, THEME_CONTRACT_V4_MIN_PRESS_VERSION)) {
+    failures.push(`${slug}: contract v4 engines.press must not accept Press versions before ${THEME_CONTRACT_V4_MIN_PRESS_VERSION}`);
   }
 }
 
@@ -277,6 +292,11 @@ async function verifyThemeAsset(entry, release, context) {
       } else if (actual.includes('theme.json')) {
         context.failures.push(`${slug}: ZIP theme.json must be valid JSON`);
       }
+      const routeContract = validateThemeRouteHelperContract(inventory.sourceFiles, {
+        contractVersion: release.contractVersion,
+        label: slug
+      });
+      routeContract.failures.forEach((failure) => context.failures.push(failure));
     }
   } catch (error) {
     context.failures.push(`${slug}: failed to verify asset: ${error.message}`);
@@ -323,11 +343,26 @@ async function inspectZip(bytes, expectedRoot) {
       files: entries
         .filter((entry) => entry.startsWith(rootPrefix) && !entry.endsWith('/'))
         .map((entry) => entry.slice(rootPrefix.length)),
+      sourceFiles: entries
+        .filter((entry) => entry.startsWith(rootPrefix) && !entry.endsWith('/'))
+        .map((entry) => entry.slice(rootPrefix.length))
+        .filter((file) => isThemeSourceFile(file))
+        .map((file) => ({
+          path: file,
+          source: runUnzip(['-p', zipPath, `${rootPrefix}${file}`])
+        })),
       themeJson
     };
   } finally {
     await rm(tempDir, { force: true, recursive: true });
   }
+}
+
+function isThemeSourceFile(file) {
+  const clean = stringValue(file).toLowerCase();
+  const leaf = clean.split('/').pop() || '';
+  const index = leaf.lastIndexOf('.');
+  return index >= 0 && THEME_SOURCE_EXTENSIONS.has(leaf.slice(index));
 }
 
 function runUnzip(args) {

@@ -17,9 +17,10 @@ size, digest, and file inventory.
 Catalog changes must pass the official theme verifier before merge:
 
 ```bash
-node scripts/test-verify-catalog.mjs
-node scripts/verify-catalog.mjs --catalog catalog.json --workspace-root .. --no-remote
-node scripts/verify-catalog.mjs --catalog catalog.json --remote --verify-assets
+npm ci
+npm test
+npm run verify
+node scripts/verify-catalog.mjs --catalog catalog.json --workspace-root .. --no-remote --press-version 3.4.130
 ```
 
 The verifier checks catalog identity fields, duplicate entries, repository and
@@ -29,3 +30,7 @@ digest, root folder, symlink safety, duplicate paths, file inventory, and
 packaged `theme.json` metadata. Press engine ranges intentionally use the
 release manifest grammar already used by official themes, such as
 `>=3.4.0 <4.0.0`.
+
+Contract v4 route-helper source scanning is delegated to the Press-owned
+`@ekilyhq/press-theme-contract` package. Catalog owns official release and ZIP
+distribution checks; it does not vendor route-analysis logic.
