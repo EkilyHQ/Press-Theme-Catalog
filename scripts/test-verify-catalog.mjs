@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -8,6 +8,30 @@ import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 
 import { verifyCatalog } from './verify-catalog.mjs';
+
+test('Catalog delegates route analysis to the Press contract package', async () => {
+  const files = await listRepositoryFiles(process.cwd());
+  const offenders = [];
+  for (const file of files) {
+    if (file.endsWith('scripts/test-verify-catalog.mjs')) continue;
+    const source = await readFile(file, 'utf8');
+    if (/from\s+['"].*acorn/u.test(source)
+      || /containsForbiddenV4RouteConstructionAst/u.test(source)
+      || /function\s+containsForbiddenV4RouteConstruction/u.test(source)) {
+      offenders.push(path.relative(process.cwd(), file));
+    }
+  }
+
+  assert.deepEqual(offenders, []);
+});
+
+test('Catalog uses the Press contract package text-extension surface for route source files', async () => {
+  const source = await readFile(path.join(process.cwd(), 'scripts', 'verify-catalog.mjs'), 'utf8');
+
+  assert.match(source, /from\s+['"]@ekilyhq\/press-theme-contract['"][\s\S]*containsForbiddenV4RouteConstruction/u);
+  assert.match(source, /PRESS_THEME_CONTRACT\.archive[\s\S]*textExtensions/u);
+  assert.doesNotMatch(source, /THEME_SOURCE_EXTENSIONS\s*=\s*new Set\(\s*\[/u);
+});
 
 test('verifyCatalog accepts a matching local official theme and ZIP asset', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot }) => {
@@ -100,6 +124,207 @@ test('verifyCatalog accepts v3 theme releases that require a later Press patch',
       remote: false,
       verifyAssets: true,
       pressVersion: '3.4.128'
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.failures, []);
+  });
+});
+
+test('verifyCatalog accepts v4 theme releases that use router helpers', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({
+      contractVersion: 4,
+      version: '3.4.6',
+      pressRange: '>=3.4.130 <4.0.0'
+    });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', {
+      themeJson: theme,
+      extraFiles: {
+        'modules/layout.js': 'export function mount(ctx) { return ctx.router.getHomeHref(); }\n'
+      }
+    });
+    const bytes = await readFile(zipPath);
+    release.version = '3.4.6';
+    release.contractVersion = 4;
+    release.engines.press = '>=3.4.130 <4.0.0';
+    release.asset.name = 'press-theme-arcus-v3.4.6.zip';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.130'
+    });
+
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.failures, []);
+  });
+});
+
+test('verifyCatalog rejects v4 theme releases that allow pre-v4 Press versions', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({
+      contractVersion: 4,
+      version: '3.4.6',
+      pressRange: '>=3.4.129 <4.0.0'
+    });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', {
+      themeJson: theme,
+      extraFiles: {
+        'modules/layout.js': 'export function mount(ctx) { return ctx.router.getHomeHref(); }\n'
+      }
+    });
+    const bytes = await readFile(zipPath);
+    release.version = '3.4.6';
+    release.contractVersion = 4;
+    release.engines.press = '>=3.4.129 <4.0.0';
+    release.asset.name = 'press-theme-arcus-v3.4.6.zip';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.130'
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /contract v4 engines\.press must not accept Press versions before 3\.4\.130/u);
+  });
+});
+
+test('verifyCatalog rejects v4 packaged source with direct public routes', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const theme = createThemeManifest({
+      contractVersion: 4,
+      version: '3.4.6',
+      pressRange: '>=3.4.130 <4.0.0'
+    });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', {
+      themeJson: theme,
+      extraFiles: {
+        'modules/layout.js': 'export const href = "?tab=posts";\n'
+      }
+    });
+    const bytes = await readFile(zipPath);
+    release.version = '3.4.6';
+    release.contractVersion = 4;
+    release.engines.press = '>=3.4.130 <4.0.0';
+    release.asset.name = 'press-theme-arcus-v3.4.6.zip';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.130'
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /contract v4 source must use router href helpers/u);
+  });
+});
+
+test('verifyCatalog rejects v4 packaged manifests missing content shapes', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const { content, ...theme } = createThemeManifest({
+      contractVersion: 4,
+      version: '3.4.6',
+      pressRange: '>=3.4.130 <4.0.0'
+    });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
+    const bytes = await readFile(zipPath);
+    release.version = '3.4.6';
+    release.contractVersion = 4;
+    release.engines.press = '>=3.4.130 <4.0.0';
+    release.asset.name = 'press-theme-arcus-v3.4.6.zip';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.130'
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /ZIP theme\.json content is required for contract v4/u);
+  });
+});
+
+test('verifyCatalog rejects v4 packaged manifests missing config schema', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
+    const { configSchema, ...theme } = createThemeManifest({
+      contractVersion: 4,
+      version: '3.4.6',
+      pressRange: '>=3.4.130 <4.0.0'
+    });
+    await writeJson(themePath, theme);
+    const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
+    const bytes = await readFile(zipPath);
+    release.version = '3.4.6';
+    release.contractVersion = 4;
+    release.engines.press = '>=3.4.130 <4.0.0';
+    release.asset.name = 'press-theme-arcus-v3.4.6.zip';
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.130'
+    });
+
+    assert.equal(result.ok, false);
+    assert.match(result.failures.join('\n'), /ZIP theme\.json configSchema is required for contract v4/u);
+  });
+});
+
+test('verifyCatalog does not scan v3 packaged source for v4 route helpers', async () => {
+  await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, tempDir }) => {
+    const zipPath = await createThemeZip(tempDir, 'arcus', {
+      extraFiles: {
+        'modules/layout.js': 'export const href = "?tab=posts";\n'
+      }
+    });
+    const bytes = await readFile(zipPath);
+    release.asset.url = pathToFileURL(zipPath).href;
+    release.asset.size = bytes.length;
+    release.asset.digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    await writeJson(releasePath, release);
+
+    const result = await verifyCatalog({
+      catalogPath,
+      workspaceRoot,
+      remote: false,
+      verifyAssets: true,
+      pressVersion: '3.4.127'
     });
 
     assert.equal(result.ok, true);
@@ -314,6 +539,24 @@ test('verifyCatalog requires a resolvable Press version', async () => {
   });
 });
 
+async function listRepositoryFiles(root) {
+  const files = [];
+  async function walk(dir) {
+    const entries = await readdir(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.name === '.git' || entry.name === 'node_modules') continue;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        await walk(fullPath);
+      } else if (entry.isFile() && /\.(?:js|mjs|cjs|json|md|ya?ml)$/u.test(entry.name)) {
+        files.push(fullPath);
+      }
+    }
+  }
+  await walk(root);
+  return files.sort();
+}
+
 async function withFixture(callback) {
   const tempDir = await mkdtemp(path.join(tmpdir(), 'press-theme-catalog-test-'));
   try {
@@ -419,7 +662,7 @@ function createThemeManifest(options = {}) {
   const version = options.version || '3.4.2';
   const contractVersion = Number.isFinite(Number(options.contractVersion)) ? Number(options.contractVersion) : 3;
   const pressRange = options.pressRange || '>=3.4.127 <4.0.0';
-  return {
+  const manifest = {
     name: 'Arcus',
     version,
     contractVersion,
@@ -429,6 +672,41 @@ function createThemeManifest(options = {}) {
     styles: ['theme.css'],
     modules: ['modules/layout.js']
   };
+  if (contractVersion >= 4) {
+    manifest.views = {
+      post: { module: 'modules/layout.js', handler: 'post' },
+      posts: { module: 'modules/layout.js', handler: 'posts' },
+      search: { module: 'modules/layout.js', handler: 'search' },
+      tab: { module: 'modules/layout.js', handler: 'tab' }
+    };
+    manifest.regions = {
+      main: {},
+      toc: {},
+      search: {},
+      nav: {},
+      tags: {},
+      footer: {}
+    };
+    manifest.components = ['press-search', 'press-toc', 'press-post-card'];
+    manifest.scrollContainer = false;
+    manifest.configSchema = {
+      type: 'object',
+      additionalProperties: true
+    };
+    manifest.content = {
+      shapes: [
+        'rawMarkdown',
+        'html',
+        'blocks',
+        'tocTree',
+        'headings',
+        'metadata',
+        'assets',
+        'links'
+      ]
+    };
+  }
+  return manifest;
 }
 
 async function createDuplicatePathZip(tempDir, slug) {

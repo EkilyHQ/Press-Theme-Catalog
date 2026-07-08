@@ -7,11 +7,17 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import {
+  containsForbiddenV4RouteConstruction,
+  PRESS_THEME_CONTRACT,
+} from '@ekilyhq/press-theme-contract';
 
 const DEFAULT_PRESS_RELEASE_URL = 'https://raw.githubusercontent.com/EkilyHQ/Press/release-artifacts/system-release.json';
 const DEFAULT_OWNER = 'EkilyHQ';
-const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set([3]);
+const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set(PRESS_THEME_CONTRACT.supportedContractVersions);
 const THEME_CONTRACT_V3_MIN_PRESS_VERSION = '3.4.127';
+const THEME_CONTRACT_V4_MIN_PRESS_VERSION = '3.4.130';
+const THEME_SOURCE_EXTENSIONS = new Set(PRESS_THEME_CONTRACT.archive && PRESS_THEME_CONTRACT.archive.textExtensions);
 
 export async function verifyCatalog(options = {}) {
   const catalogPath = options.catalogPath || path.resolve('catalog.json');
@@ -186,6 +192,9 @@ function validateThemeRelease(entry, release, context) {
   if (release.contractVersion === 3 && pressRange) {
     validateV3PressRange(slug, pressRange, context.failures);
   }
+  if (release.contractVersion === 4 && pressRange) {
+    validateV4PressRange(slug, pressRange, context.failures);
+  }
   if (!Array.isArray(release.files) || release.files.length === 0) {
     context.failures.push(`${slug}: release files must be a non-empty array`);
   } else {
@@ -197,6 +206,12 @@ function validateThemeRelease(entry, release, context) {
 function validateV3PressRange(slug, pressRange, failures) {
   if (semverRangeAllowsBefore(pressRange, THEME_CONTRACT_V3_MIN_PRESS_VERSION)) {
     failures.push(`${slug}: contract v3 engines.press must not accept Press versions before ${THEME_CONTRACT_V3_MIN_PRESS_VERSION}`);
+  }
+}
+
+function validateV4PressRange(slug, pressRange, failures) {
+  if (semverRangeAllowsBefore(pressRange, THEME_CONTRACT_V4_MIN_PRESS_VERSION)) {
+    failures.push(`${slug}: contract v4 engines.press must not accept Press versions before ${THEME_CONTRACT_V4_MIN_PRESS_VERSION}`);
   }
 }
 
@@ -277,6 +292,11 @@ async function verifyThemeAsset(entry, release, context) {
       } else if (actual.includes('theme.json')) {
         context.failures.push(`${slug}: ZIP theme.json must be valid JSON`);
       }
+      const routeContract = validateCatalogRouteHelperContract(inventory.sourceFiles, {
+        contractVersion: release.contractVersion,
+        label: slug
+      });
+      routeContract.failures.forEach((failure) => context.failures.push(failure));
     }
   } catch (error) {
     context.failures.push(`${slug}: failed to verify asset: ${error.message}`);
@@ -323,11 +343,56 @@ async function inspectZip(bytes, expectedRoot) {
       files: entries
         .filter((entry) => entry.startsWith(rootPrefix) && !entry.endsWith('/'))
         .map((entry) => entry.slice(rootPrefix.length)),
+      sourceFiles: entries
+        .filter((entry) => entry.startsWith(rootPrefix) && !entry.endsWith('/'))
+        .map((entry) => entry.slice(rootPrefix.length))
+        .filter((file) => isThemeSourceFile(file))
+        .map((file) => ({
+          path: file,
+          source: runUnzip(['-p', zipPath, `${rootPrefix}${file}`])
+        })),
       themeJson
     };
   } finally {
     await rm(tempDir, { force: true, recursive: true });
   }
+}
+
+function isThemeSourceFile(file) {
+  const clean = stringValue(file).toLowerCase();
+  const leaf = clean.split('/').pop() || '';
+  const index = leaf.lastIndexOf('.');
+  return index >= 0 && THEME_SOURCE_EXTENSIONS.has(leaf.slice(index));
+}
+
+function validateCatalogRouteHelperContract(files, options = {}) {
+  const contractVersion = Number(options.contractVersion);
+  const label = stringValue(options.label || 'theme');
+  const routeGuardFiles = normalizeRouteGuardFiles(files);
+  const failures = [];
+  if (!Number.isFinite(contractVersion) || contractVersion < 4) {
+    return { ok: true, failures, files: [] };
+  }
+  routeGuardFiles.forEach((file) => {
+    if (containsForbiddenV4RouteConstruction(file.source, { path: file.path, files: routeGuardFiles })) {
+      failures.push(`${label}: contract v4 source must use router href helpers instead of public route construction in ${file.path}`);
+    }
+  });
+  return {
+    ok: failures.length === 0,
+    failures,
+    files: failures.length ? routeGuardFiles.map((file) => file.path) : []
+  };
+}
+
+function normalizeRouteGuardFiles(files) {
+  if (!Array.isArray(files)) return [];
+  return files
+    .map((file) => ({
+      path: stringValue(file && file.path).replace(/\\+/g, '/'),
+      source: stringValue(file && file.source)
+    }))
+    .filter((file) => file.path && file.path !== 'theme.json' && isThemeSourceFile(file.path));
 }
 
 function runUnzip(args) {
@@ -426,6 +491,68 @@ function validateThemeManifest(label, entry, release, theme, inventory, failures
   declaredFiles.forEach((file) => {
     if (!inventory.includes(file)) failures.push(`${slug}: theme.json declares missing file ${file}`);
   });
+  if (release.contractVersion >= 4) {
+    validateV4ThemeManifestContract(label, theme, failures);
+  }
+}
+
+function validateV4ThemeManifestContract(label, theme, failures) {
+  const manifest = PRESS_THEME_CONTRACT.manifest || {};
+  (manifest.requiredFields || []).forEach((field) => {
+    if (theme[field] == null) failures.push(`${label} ${field} is required for contract v4`);
+  });
+
+  const views = plainObject(theme.views) ? theme.views : null;
+  if (!views) {
+    failures.push(`${label} views is required for contract v4`);
+  } else {
+    (manifest.requiredViews || []).forEach((view) => {
+      if (!plainObject(views[view])) failures.push(`${label} views.${view} is required for contract v4`);
+    });
+  }
+
+  const regions = plainObject(theme.regions) ? theme.regions : null;
+  if (!regions) {
+    failures.push(`${label} regions is required for contract v4`);
+  } else {
+    (manifest.requiredRegions || []).forEach((region) => {
+      if (!plainObject(regions[region])) failures.push(`${label} regions.${region} is required for contract v4`);
+    });
+  }
+
+  const components = Array.isArray(theme.components) ? new Set(theme.components.map(stringValue).filter(Boolean)) : null;
+  if (!components) {
+    failures.push(`${label} components is required for contract v4`);
+  } else {
+    (manifest.requiredComponents || []).forEach((component) => {
+      if (!components.has(component)) failures.push(`${label} components must include ${component} for contract v4`);
+    });
+  }
+
+  if (!Object.prototype.hasOwnProperty.call(theme, 'scrollContainer')) {
+    failures.push(`${label} scrollContainer is required for contract v4`);
+  }
+  if (!plainObject(theme.configSchema)) {
+    failures.push(`${label} configSchema is required for contract v4`);
+  }
+
+  const content = plainObject(theme.content) ? theme.content : null;
+  if (!content) {
+    failures.push(`${label} content is required for contract v4`);
+    return;
+  }
+  const shapes = Array.isArray(content.shapes) ? new Set(content.shapes.map(stringValue).filter(Boolean)) : null;
+  if (!shapes) {
+    failures.push(`${label} content.shapes is required for contract v4`);
+    return;
+  }
+  (manifest.requiredContentShapes || []).forEach((shape) => {
+    if (!shapes.has(shape)) failures.push(`${label} content.shapes must include ${shape} for contract v4`);
+  });
+}
+
+function plainObject(value) {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 function validatedStringArray(label, value, failures) {
