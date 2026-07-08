@@ -17,6 +17,7 @@ size, digest, and file inventory.
 Catalog changes must pass the official theme verifier before merge:
 
 ```bash
+export NODE_AUTH_TOKEN=<token with read:packages for @ekilyhq/press-theme-contract>
 npm ci
 npm test
 npm run verify
