@@ -15,7 +15,6 @@ import {
 const DEFAULT_PRESS_RELEASE_URL = 'https://raw.githubusercontent.com/EkilyHQ/Press/release-artifacts/system-release.json';
 const DEFAULT_OWNER = 'EkilyHQ';
 const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set(PRESS_THEME_CONTRACT.supportedContractVersions);
-const THEME_CONTRACT_V3_MIN_PRESS_VERSION = '3.4.127';
 const THEME_CONTRACT_V4_MIN_PRESS_VERSION = '3.4.130';
 const THEME_SOURCE_EXTENSIONS = new Set(PRESS_THEME_CONTRACT.archive && PRESS_THEME_CONTRACT.archive.textExtensions);
 
@@ -189,9 +188,6 @@ function validateThemeRelease(entry, release, context) {
   } else if (context.pressVersion && !satisfiesSemverRange(context.pressVersion, pressRange)) {
     context.failures.push(`${slug}: release engines.press (${pressRange}) does not accept Press ${context.pressVersion}`);
   }
-  if (release.contractVersion === 3 && pressRange) {
-    validateV3PressRange(slug, pressRange, context.failures);
-  }
   if (release.contractVersion === 4 && pressRange) {
     validateV4PressRange(slug, pressRange, context.failures);
   }
@@ -201,12 +197,6 @@ function validateThemeRelease(entry, release, context) {
     validateFileInventory(`${slug}: release files`, release.files, context.failures);
   }
   validateReleaseAsset(entry, release, context.failures);
-}
-
-function validateV3PressRange(slug, pressRange, failures) {
-  if (semverRangeAllowsBefore(pressRange, THEME_CONTRACT_V3_MIN_PRESS_VERSION)) {
-    failures.push(`${slug}: contract v3 engines.press must not accept Press versions before ${THEME_CONTRACT_V3_MIN_PRESS_VERSION}`);
-  }
 }
 
 function validateV4PressRange(slug, pressRange, failures) {
