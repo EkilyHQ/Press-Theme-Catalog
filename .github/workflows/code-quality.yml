@@ -19,6 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-node@v6
@@ -36,7 +37,11 @@ jobs:
         run: npm run quality
 
       - name: Check patch whitespace
-        run: git diff --check
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        env:
+          PATCH_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PATCH_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: git diff --check "${PATCH_BASE_SHA}" "${PATCH_HEAD_SHA}"
 
       - name: Check generated workspace state
         run: test -z "$(git status --porcelain=v1)"

@@ -101,12 +101,19 @@ test('Code Quality runs read-only on the supported Node version', async () => {
   assert.match(workflow, /workflow_dispatch:/u);
   assert.match(workflow, /schedule:\n\s+- cron: '[^']+'/u);
   assert.match(workflow, /permissions:\n\s+contents: read\n\s+packages: read/u);
+  assert.match(workflow, /fetch-depth: 0/u);
   assert.match(workflow, /persist-credentials: false/u);
   assert.match(workflow, /uses: actions\/setup-node@v6/u);
   assert.match(workflow, new RegExp(`node-version: '${EXPECTED_NODE_VERSION.replaceAll('.', '\\.')}'`, 'u'));
   assert.match(workflow, /run: npm ci --ignore-scripts/u);
   assert.match(workflow, /run: npm run quality/u);
-  assert.match(workflow, /run: git diff --check/u);
+  assert.match(workflow, /if: github\.event_name == 'pull_request' \|\| github\.event_name == 'push'/u);
+  assert.match(
+    workflow,
+    /PATCH_BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \|\| github\.event\.before \}\}/u
+  );
+  assert.match(workflow, /PATCH_HEAD_SHA: \$\{\{ github\.event\.pull_request\.head\.sha \|\| github\.sha \}\}/u);
+  assert.match(workflow, /run: git diff --check "\$\{PATCH_BASE_SHA\}" "\$\{PATCH_HEAD_SHA\}"/u);
   assert.match(workflow, /git status --porcelain=v1/u);
   assert.match(verifyWorkflow, /uses: actions\/setup-node@v6/u);
   assert.match(verifyWorkflow, new RegExp(`node-version: '${EXPECTED_NODE_VERSION.replaceAll('.', '\\.')}'`, 'u'));
