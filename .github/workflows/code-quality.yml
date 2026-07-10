@@ -1,0 +1,47 @@
+name: Code Quality
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+  schedule:
+    - cron: '23 4 * * 1'
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '22.18.0'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@ekilyhq'
+
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.EKILY_PACKAGES_READ_TOKEN || github.token }}
+
+      - name: Run code quality gates
+        run: npm run quality
+
+      - name: Check patch whitespace
+        if: github.event_name == 'pull_request' || github.event_name == 'push'
+        env:
+          PATCH_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          PATCH_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: git diff --check "${PATCH_BASE_SHA}" "${PATCH_HEAD_SHA}"
+
+      - name: Check generated workspace state
+        run: test -z "$(git status --porcelain=v1)"

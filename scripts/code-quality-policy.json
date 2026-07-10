@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "nodeVersion": "22.18.0",
+  "eslint": {
+    "preset": "recommended",
+    "scope": "**/*.{js,mjs,cjs}",
+    "maxWarnings": 0,
+    "baselineViolations": 0
+  },
+  "prettier": {
+    "scope": "all repository files supported by Prettier",
+    "baselineExceptions": []
+  },
+  "typeChecking": {
+    "status": "accepted-no-action",
+    "currentJavaScriptSurface": ["scripts/test-verify-catalog.mjs", "scripts/verify-catalog.mjs"],
+    "evidence": [
+      "The product JavaScript surface is one Node verifier module plus its integration-heavy node:test suite.",
+      "The private package publishes no exports map; the verifier module is consumed only by its repository test suite and CLI.",
+      "npm test exercises the supported and rejected catalog, manifest, archive, route, and semver behaviors end to end."
+    ],
+    "decision": "Do not introduce checkJs annotations or a TypeScript build solely to duplicate the current runtime contract tests.",
+    "revisitWhen": "Add type checking when the package exposes a supported external API or splits the verifier into multiple reusable modules."
+  }
+}
