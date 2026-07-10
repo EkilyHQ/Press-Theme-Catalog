@@ -4,13 +4,23 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node scripts/test-verify-catalog.mjs",
+    "test": "node scripts/test-verify-catalog.mjs && node scripts/test-code-quality-config.mjs",
+    "lint": "eslint --max-warnings 0 .",
+    "format": "prettier --write . --ignore-unknown",
+    "format:check": "prettier --check . --ignore-unknown",
+    "quality": "node scripts/test-code-quality-config.mjs && npm run lint && npm run format:check",
     "verify": "node scripts/verify-catalog.mjs --catalog catalog.json --remote --verify-assets"
   },
   "dependencies": {
     "@ekilyhq/press-theme-contract": "3.4.131"
   },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "eslint": "10.6.0",
+    "globals": "17.7.0",
+    "prettier": "3.9.4"
+  },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.18.0 <23"
   }
 }

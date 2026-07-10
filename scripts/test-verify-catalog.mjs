@@ -25,9 +25,11 @@ test('Catalog delegates route analysis to the Press contract package', async () 
   for (const file of files) {
     if (file.endsWith('scripts/test-verify-catalog.mjs')) continue;
     const source = await readFile(file, 'utf8');
-    if (/from\s+['"].*acorn/u.test(source)
-      || /containsForbiddenV4RouteConstructionAst/u.test(source)
-      || /function\s+containsForbiddenV4RouteConstruction/u.test(source)) {
+    if (
+      /from\s+['"].*acorn/u.test(source) ||
+      /containsForbiddenV4RouteConstructionAst/u.test(source) ||
+      /function\s+containsForbiddenV4RouteConstruction/u.test(source)
+    ) {
       offenders.push(path.relative(process.cwd(), file));
     }
   }
@@ -193,7 +195,10 @@ test('verifyCatalog rejects v4 theme releases that allow pre-v4 Press versions',
     });
 
     assert.equal(result.ok, false);
-    assert.match(result.failures.join('\n'), /contract v4 engines\.press must not accept Press versions before 3\.4\.130/u);
+    assert.match(
+      result.failures.join('\n'),
+      /contract v4 engines\.press must not accept Press versions before 3\.4\.130/u
+    );
   });
 });
 
@@ -236,11 +241,12 @@ test('verifyCatalog rejects v4 packaged source with direct public routes', async
 
 test('verifyCatalog rejects v4 packaged manifests missing content shapes', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
-    const { content, ...theme } = createThemeManifest({
+    const theme = createThemeManifest({
       contractVersion: 4,
       version: '3.4.6',
       pressRange: '>=3.4.130 <4.0.0'
     });
+    delete theme.content;
     await writeJson(themePath, theme);
     const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
     const bytes = await readFile(zipPath);
@@ -268,11 +274,12 @@ test('verifyCatalog rejects v4 packaged manifests missing content shapes', async
 
 test('verifyCatalog rejects v4 packaged manifests missing config schema', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, themePath, tempDir }) => {
-    const { configSchema, ...theme } = createThemeManifest({
+    const theme = createThemeManifest({
       contractVersion: 4,
       version: '3.4.6',
       pressRange: '>=3.4.130 <4.0.0'
     });
+    delete theme.configSchema;
     await writeJson(themePath, theme);
     const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson: theme });
     const bytes = await readFile(zipPath);
@@ -441,7 +448,8 @@ test('verifyCatalog rejects ZIP theme manifest drift from theme-release', async 
 
 test('verifyCatalog rejects ZIP theme manifests without declared modules', async () => {
   await withFixture(async ({ catalogPath, workspaceRoot, releasePath, release, tempDir }) => {
-    const { modules, ...themeJson } = createThemeManifest();
+    const themeJson = createThemeManifest();
+    delete themeJson.modules;
     const zipPath = await createThemeZip(tempDir, 'arcus', { themeJson });
     const bytes = await readFile(zipPath);
     release.asset.url = pathToFileURL(zipPath).href;
@@ -536,11 +544,7 @@ async function withFixture(callback) {
         size: bytes.length,
         digest: `sha256:${createHash('sha256').update(bytes).digest('hex')}`
       },
-      files: [
-        'modules/layout.js',
-        'theme.css',
-        'theme.json'
-      ]
+      files: ['modules/layout.js', 'theme.css', 'theme.json']
     };
     const releasePath = path.join(themeRepo, 'theme-release.json');
     await writeJson(releasePath, release);
@@ -634,16 +638,7 @@ function createThemeManifest(options = {}) {
       additionalProperties: true
     };
     manifest.content = {
-      shapes: [
-        'rawMarkdown',
-        'html',
-        'blocks',
-        'tocTree',
-        'headings',
-        'metadata',
-        'assets',
-        'links'
-      ]
+      shapes: ['rawMarkdown', 'html', 'blocks', 'tocTree', 'headings', 'metadata', 'assets', 'links']
     };
   }
   return manifest;

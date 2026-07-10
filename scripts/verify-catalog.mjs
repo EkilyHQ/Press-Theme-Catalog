@@ -7,12 +7,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import {
-  containsForbiddenV4RouteConstruction,
-  PRESS_THEME_CONTRACT,
-} from '@ekilyhq/press-theme-contract';
+import { containsForbiddenV4RouteConstruction, PRESS_THEME_CONTRACT } from '@ekilyhq/press-theme-contract';
 
-const DEFAULT_PRESS_RELEASE_URL = 'https://raw.githubusercontent.com/EkilyHQ/Press/release-artifacts/system-release.json';
+const DEFAULT_PRESS_RELEASE_URL =
+  'https://raw.githubusercontent.com/EkilyHQ/Press/release-artifacts/system-release.json';
 const DEFAULT_OWNER = 'EkilyHQ';
 const SUPPORTED_THEME_CONTRACT_VERSIONS = new Set(PRESS_THEME_CONTRACT.supportedContractVersions);
 const THEME_CONTRACT_V4_MIN_PRESS_VERSION = '3.4.130';
@@ -33,7 +31,9 @@ export async function verifyCatalog(options = {}) {
   const catalog = await readJsonFile(catalogPath);
   const failures = [];
   if (!pressVersion) {
-    failures.push('Press version could not be resolved; pass --press-version or make the Press system release reachable');
+    failures.push(
+      'Press version could not be resolved; pass --press-version or make the Press system release reachable'
+    );
   }
   validateCatalog(catalog, failures);
 
@@ -135,9 +135,8 @@ function validateCatalog(catalog, failures) {
 async function loadThemeRelease(entry, context) {
   const slug = stringValue(entry.value);
   const repoName = repoShortName(entry.repo);
-  const localPath = context.workspaceRoot && repoName
-    ? path.join(context.workspaceRoot, repoName, 'theme-release.json')
-    : '';
+  const localPath =
+    context.workspaceRoot && repoName ? path.join(context.workspaceRoot, repoName, 'theme-release.json') : '';
   if (localPath && existsSync(localPath)) {
     return readJsonFile(localPath);
   }
@@ -155,9 +154,7 @@ async function loadThemeRelease(entry, context) {
 
 async function loadLocalTheme(entry, workspaceRoot) {
   const repoName = repoShortName(entry.repo);
-  const themePath = workspaceRoot && repoName
-    ? path.join(workspaceRoot, repoName, 'theme', 'theme.json')
-    : '';
+  const themePath = workspaceRoot && repoName ? path.join(workspaceRoot, repoName, 'theme', 'theme.json') : '';
   if (!themePath || !existsSync(themePath)) return null;
   const themeJson = await readJsonFile(themePath);
   const themeDir = path.dirname(themePath);
@@ -186,7 +183,9 @@ function validateThemeRelease(entry, release, context) {
   if (!pressRange) {
     context.failures.push(`${slug}: release engines.press is required`);
   } else if (context.pressVersion && !satisfiesSemverRange(context.pressVersion, pressRange)) {
-    context.failures.push(`${slug}: release engines.press (${pressRange}) does not accept Press ${context.pressVersion}`);
+    context.failures.push(
+      `${slug}: release engines.press (${pressRange}) does not accept Press ${context.pressVersion}`
+    );
   }
   if (release.contractVersion === 4 && pressRange) {
     validateV4PressRange(slug, pressRange, context.failures);
@@ -201,7 +200,9 @@ function validateThemeRelease(entry, release, context) {
 
 function validateV4PressRange(slug, pressRange, failures) {
   if (semverRangeAllowsBefore(pressRange, THEME_CONTRACT_V4_MIN_PRESS_VERSION)) {
-    failures.push(`${slug}: contract v4 engines.press must not accept Press versions before ${THEME_CONTRACT_V4_MIN_PRESS_VERSION}`);
+    failures.push(
+      `${slug}: contract v4 engines.press must not accept Press versions before ${THEME_CONTRACT_V4_MIN_PRESS_VERSION}`
+    );
   }
 }
 
@@ -210,7 +211,8 @@ function validateLocalTheme(entry, release, localTheme, failures) {
   const theme = localTheme.themeJson;
   if (theme.name !== release.label) failures.push(`${slug}: theme/theme.json name must match release label`);
   if (theme.version !== release.version) failures.push(`${slug}: theme/theme.json version must match release version`);
-  if (theme.contractVersion !== release.contractVersion) failures.push(`${slug}: theme/theme.json contractVersion must match release`);
+  if (theme.contractVersion !== release.contractVersion)
+    failures.push(`${slug}: theme/theme.json contractVersion must match release`);
   if (stringValue(theme.engines && theme.engines.press) !== stringValue(release.engines && release.engines.press)) {
     failures.push(`${slug}: theme/theme.json engines.press must match release`);
   }
@@ -269,7 +271,9 @@ async function verifyThemeAsset(entry, release, context) {
       const actual = normalizeFiles(inventory.files);
       const duplicateZipFiles = duplicateValues(inventory.files);
       if (duplicateZipFiles.length) {
-        context.failures.push(`${slug}: ZIP inventory must not contain duplicate paths: ${duplicateZipFiles.join(', ')}`);
+        context.failures.push(
+          `${slug}: ZIP inventory must not contain duplicate paths: ${duplicateZipFiles.join(', ')}`
+        );
       }
       if (!sameArray(expected, actual)) {
         context.failures.push(`${slug}: ZIP file inventory must match theme-release files`);
@@ -365,7 +369,9 @@ function validateCatalogRouteHelperContract(files, options = {}) {
   }
   routeGuardFiles.forEach((file) => {
     if (containsForbiddenV4RouteConstruction(file.source, { path: file.path, files: routeGuardFiles })) {
-      failures.push(`${label}: contract v4 source must use router href helpers instead of public route construction in ${file.path}`);
+      failures.push(
+        `${label}: contract v4 source must use router href helpers instead of public route construction in ${file.path}`
+      );
     }
   });
   return {
@@ -510,7 +516,9 @@ function validateV4ThemeManifestContract(label, theme, failures) {
     });
   }
 
-  const components = Array.isArray(theme.components) ? new Set(theme.components.map(stringValue).filter(Boolean)) : null;
+  const components = Array.isArray(theme.components)
+    ? new Set(theme.components.map(stringValue).filter(Boolean))
+    : null;
   if (!components) {
     failures.push(`${label} components is required for contract v4`);
   } else {
@@ -589,10 +597,13 @@ function normalizeFiles(files) {
 function duplicateValues(values) {
   const seen = new Set();
   const duplicates = new Set();
-  (Array.isArray(values) ? values : []).map(stringValue).filter(Boolean).forEach((value) => {
-    if (seen.has(value)) duplicates.add(value);
-    else seen.add(value);
-  });
+  (Array.isArray(values) ? values : [])
+    .map(stringValue)
+    .filter(Boolean)
+    .forEach((value) => {
+      if (seen.has(value)) duplicates.add(value);
+      else seen.add(value);
+    });
   return [...duplicates].sort();
 }
 
@@ -639,26 +650,37 @@ function minSemverParts(left, right) {
 }
 
 function satisfiesSemverRange(version, range) {
-  const clauses = stringValue(range).split('||').map((part) => part.trim()).filter(Boolean);
+  const clauses = stringValue(range)
+    .split('||')
+    .map((part) => part.trim())
+    .filter(Boolean);
   if (!clauses.length) return false;
-  return clauses.some((clause) => clause.split(/\s+/u).filter(Boolean).every((token) => {
-    const match = token.match(/^(>=|>|<=|<|=)?(\d+\.\d+\.\d+)$/u);
-    if (!match) return false;
-    const compare = compareSemver(version, match[2]);
-    if (!Number.isFinite(compare)) return false;
-    const op = match[1] || '=';
-    if (op === '>=') return compare >= 0;
-    if (op === '>') return compare > 0;
-    if (op === '<=') return compare <= 0;
-    if (op === '<') return compare < 0;
-    return compare === 0;
-  }));
+  return clauses.some((clause) =>
+    clause
+      .split(/\s+/u)
+      .filter(Boolean)
+      .every((token) => {
+        const match = token.match(/^(>=|>|<=|<|=)?(\d+\.\d+\.\d+)$/u);
+        if (!match) return false;
+        const compare = compareSemver(version, match[2]);
+        if (!Number.isFinite(compare)) return false;
+        const op = match[1] || '=';
+        if (op === '>=') return compare >= 0;
+        if (op === '>') return compare > 0;
+        if (op === '<=') return compare <= 0;
+        if (op === '<') return compare < 0;
+        return compare === 0;
+      })
+  );
 }
 
 function semverRangeAllowsBefore(range, boundaryVersion) {
   const boundary = parseSemver(boundaryVersion);
   if (!boundary) return false;
-  const clauses = stringValue(range).split('||').map((part) => part.trim()).filter(Boolean);
+  const clauses = stringValue(range)
+    .split('||')
+    .map((part) => part.trim())
+    .filter(Boolean);
   return clauses.some((clause) => semverClauseAllowsBefore(clause, boundary));
 }
 
