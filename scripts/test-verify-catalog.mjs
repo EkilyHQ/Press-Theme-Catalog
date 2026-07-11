@@ -15,8 +15,8 @@ test('Catalog consumes the v4-only Press contract package', async () => {
   const lockfile = JSON.parse(await readFile(path.join(process.cwd(), 'package-lock.json'), 'utf8'));
 
   assert.deepEqual(PRESS_THEME_CONTRACT.supportedContractVersions, [4]);
-  assert.equal(packageJson.dependencies['@ekilyhq/press-theme-contract'], '3.4.131');
-  assert.equal(lockfile.packages['node_modules/@ekilyhq/press-theme-contract'].version, '3.4.131');
+  assert.equal(packageJson.dependencies['@ekilyhq/press-theme-contract'], '3.4.139');
+  assert.equal(lockfile.packages['node_modules/@ekilyhq/press-theme-contract'].version, '3.4.139');
 });
 
 test('Catalog delegates route analysis to the Press contract package', async () => {
