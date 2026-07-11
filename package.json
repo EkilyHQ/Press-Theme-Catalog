@@ -6,9 +6,10 @@
   "scripts": {
     "test": "node scripts/test-verify-catalog.mjs && node scripts/test-code-quality-config.mjs",
     "lint": "eslint --max-warnings 0 .",
+    "lint:policy-test": "node scripts/verify-eslint-inline-policy.mjs",
     "format": "prettier --write . --ignore-unknown",
     "format:check": "prettier --check . --ignore-unknown",
-    "quality": "node scripts/test-code-quality-config.mjs && npm run lint && npm run format:check",
+    "quality": "node scripts/test-code-quality-config.mjs && npm run lint:policy-test && npm run lint && npm run format:check",
     "verify": "node scripts/verify-catalog.mjs --catalog catalog.json --remote --verify-assets"
   },
   "dependencies": {

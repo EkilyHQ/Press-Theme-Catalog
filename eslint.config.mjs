@@ -14,6 +14,7 @@ export default [
       sourceType: 'module'
     },
     linterOptions: {
+      noInlineConfig: true,
       reportUnusedDisableDirectives: 'error'
     }
   }
