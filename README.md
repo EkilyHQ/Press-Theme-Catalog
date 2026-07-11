@@ -38,6 +38,7 @@ Contract v4 route-helper source scanning is delegated to the Press-owned
 distribution checks; it does not vendor route-analysis logic.
 
 Code Quality CI pins Node 22.18.0 and applies ESLint's recommended rules with
-zero warnings plus a full-repository Prettier check. The current type-checking
+zero warnings, forbids source-level ESLint configuration comments, and runs a
+full-repository Prettier check. The current type-checking
 decision and its mandatory revisit trigger are recorded in
 `scripts/code-quality-policy.json`.

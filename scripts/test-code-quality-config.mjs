@@ -45,10 +45,11 @@ test('quality dependencies and commands are deterministic', async () => {
   assert.equal(packageJson.engines.node, '>=22.18.0 <23');
   assert.deepEqual(packageJson.devDependencies, EXPECTED_DEV_DEPENDENCIES);
   assert.equal(packageJson.scripts.lint, 'eslint --max-warnings 0 .');
+  assert.equal(packageJson.scripts['lint:policy-test'], 'node scripts/verify-eslint-inline-policy.mjs');
   assert.equal(packageJson.scripts['format:check'], 'prettier --check . --ignore-unknown');
   assert.equal(
     packageJson.scripts.quality,
-    'node scripts/test-code-quality-config.mjs && npm run lint && npm run format:check'
+    'node scripts/test-code-quality-config.mjs && npm run lint:policy-test && npm run lint && npm run format:check'
   );
   assert.match(packageJson.scripts.test, /node scripts\/test-code-quality-config\.mjs/u);
 
@@ -61,16 +62,30 @@ test('quality dependencies and commands are deterministic', async () => {
 
 test('ESLint and Prettier cover all first-party scripts without baselines', async () => {
   const eslintConfig = await readText('eslint.config.mjs');
+  const inlinePolicyTest = await readText('scripts/verify-eslint-inline-policy.mjs');
   const prettierConfig = await readJson('.prettierrc.json');
   const policy = await readJson('scripts/code-quality-policy.json');
 
   assert.match(eslintConfig, /eslint\.configs\.recommended/u);
   assert.match(eslintConfig, /files:\s*\['\*\*\/\*\.\{js,mjs,cjs\}'\]/u);
+  assert.match(eslintConfig, /noInlineConfig:\s*true/u);
   assert.match(eslintConfig, /reportUnusedDisableDirectives:\s*'error'/u);
   assert.equal(policy.eslint.scope, '**/*.{js,mjs,cjs}');
   assert.equal(policy.eslint.maxWarnings, 0);
   assert.equal(policy.eslint.baselineViolations, 0);
+  assert.deepEqual(policy.eslint.inlineConfiguration, {
+    decision: 'forbidden',
+    mechanism: 'linterOptions.noInlineConfig',
+    regressionCommand: 'node scripts/verify-eslint-inline-policy.mjs',
+    policy:
+      'Source comments cannot disable or reconfigure lint rules; a directive beside a real no-undef violation must leave that violation unsuppressed.'
+  });
   assert.deepEqual(policy.prettier.baselineExceptions, []);
+  assert.match(inlinePolicyTest, /eslint-disable-next-line no-undef/u);
+  assert.match(inlinePolicyTest, /message\.ruleId === 'no-undef'/u);
+  assert.match(inlinePolicyTest, /result\.errorCount > 0/u);
+  assert.match(inlinePolicyTest, /cleanResult\.errorCount, 0/u);
+  assert.match(inlinePolicyTest, /cleanResult\.warningCount, 0/u);
   assert.equal(prettierConfig.singleQuote, true);
   assert.equal(prettierConfig.trailingComma, 'none');
 });
@@ -78,7 +93,14 @@ test('ESLint and Prettier cover all first-party scripts without baselines', asyn
 test('type-checking decision is explicit and has a removal condition', async () => {
   const policy = await readJson('scripts/code-quality-policy.json');
   const productScripts = (await listJavaScriptFiles())
-    .filter((file) => !['eslint.config.mjs', 'scripts/test-code-quality-config.mjs'].includes(file))
+    .filter(
+      (file) =>
+        ![
+          'eslint.config.mjs',
+          'scripts/test-code-quality-config.mjs',
+          'scripts/verify-eslint-inline-policy.mjs'
+        ].includes(file)
+    )
     .sort();
 
   assert.equal(policy.typeChecking.status, 'accepted-no-action');

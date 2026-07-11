@@ -5,7 +5,13 @@
     "preset": "recommended",
     "scope": "**/*.{js,mjs,cjs}",
     "maxWarnings": 0,
-    "baselineViolations": 0
+    "baselineViolations": 0,
+    "inlineConfiguration": {
+      "decision": "forbidden",
+      "mechanism": "linterOptions.noInlineConfig",
+      "regressionCommand": "node scripts/verify-eslint-inline-policy.mjs",
+      "policy": "Source comments cannot disable or reconfigure lint rules; a directive beside a real no-undef violation must leave that violation unsuppressed."
+    }
   },
   "prettier": {
     "scope": "all repository files supported by Prettier",
